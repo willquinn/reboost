@@ -1,5 +1,5 @@
 from __future__ import annotations
 
+import logging
 
-def hello_world():
-    return "Hello World!"
+logging.basicConfig(level=logging.INFO)
