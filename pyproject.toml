@@ -38,6 +38,7 @@ dependencies = [
     "hist",
     "particle",
     "pandas",
+    "matplotlib",
 ]
 dynamic = [
     "version",

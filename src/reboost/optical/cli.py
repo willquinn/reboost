@@ -47,6 +47,10 @@ def optical_cli() -> None:
     )
     map_parser.add_argument("output", help="output map LH5 file", metavar="OUTPUT_MAP")
 
+    # STEP 2b: view maps
+    mapview_parser = subparsers.add_parser("viewmap", help="view optical map")
+    mapview_parser.add_argument("input", help="input evt LH5 file", metavar="INPUT_MAP")
+
     args = parser.parse_args()
 
     handler = colorlog.StreamHandler()
@@ -64,7 +68,7 @@ def optical_cli() -> None:
 
         build_optmap_evt(args.input, args.output)
 
-    # STEP 2: build map file from evt tier
+    # STEP 2a: build map file from evt tier
     if args.command == "createmap":
         from reboost.optical.create import create_optical_maps
         from reboost.optical.evt import read_optmap_evt
@@ -80,3 +84,9 @@ def optical_cli() -> None:
             chfilter=(),
             output_lh5_fn=args.output,
         )
+
+    # STEP 2b: view maps
+    if args.command == "viewmap":
+        from reboost.optical.mapview import view_optmap
+
+        view_optmap(args.input)
