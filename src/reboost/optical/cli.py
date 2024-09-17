@@ -5,6 +5,8 @@ import json
 import logging
 from pathlib import Path
 
+import colorlog
+
 log = logging.getLogger(__name__)
 
 
@@ -13,6 +15,14 @@ def optical_cli() -> None:
         prog="reboost-optical",
         description="%(prog)s command line interface",
     )
+
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="""Increase the program verbosity""",
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # STEP 1: build evt file from hit tier
@@ -38,6 +48,15 @@ def optical_cli() -> None:
     map_parser.add_argument("output", help="output map LH5 file", metavar="OUTPUT_MAP")
 
     args = parser.parse_args()
+
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(
+        colorlog.ColoredFormatter("%(log_color)s%(name)s [%(levelname)s] %(message)s")
+    )
+    logger = logging.getLogger("reboost.optical")
+    logger.addHandler(handler)
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
 
     # STEP 1: build evt file from hit tier
     if args.command == "evt":
