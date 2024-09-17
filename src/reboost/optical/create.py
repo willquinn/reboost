@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import scipy.optimize
 from lgdo import lh5
-from lgdo.types import Array
+from lgdo.lh5 import LH5Store
+from lgdo.types import Array, Histogram, Scalar
 from numba import njit
 from numpy.typing import NDArray
 
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 
 
 def get_channel_efficiency(rawid: int) -> float:  # noqa: ARG001
+    # TODO: implement
     return 0.99
 
 
@@ -80,7 +82,7 @@ def _count_multi_ph_detection(hitcounts) -> NDArray:
 
 
 def _fit_multi_ph_detection(hits_per_primary) -> float:
-    x = np.arange(0, hits_per_primary.max())
+    x = np.arange(0, len(hits_per_primary))
     popt, pcov = scipy.optimize.curve_fit(
         lambda x, p0, k: p0 * np.exp(-k * x), x[1:], hits_per_primary[1:]
     )
@@ -92,7 +94,7 @@ def _fit_multi_ph_detection(hits_per_primary) -> float:
     )
     log.info(
         "p(> 1 detected photon)/p(<=1 detected photon) = %f",
-        sum(hits_per_primary[2:]) / (hits_per_primary[0:2]),
+        sum(hits_per_primary[2:]) / sum(hits_per_primary[0:2]),
     )
 
     return best_fit_exponent
@@ -132,7 +134,7 @@ def create_optical_maps(
 
     _fill_hit_maps(optmaps, loc, hitcounts, eff, rng)
     hits_per_primary = _count_multi_ph_detection(hitcounts)
-    # hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
+    hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
 
     log.info("computing probability and storing")
     for i in range(len(optmaps)):
@@ -149,3 +151,71 @@ def create_optical_maps(
 
     if output_lh5_fn is not None:
         lh5.write(Array(hits_per_primary), "_hitcounts", lh5_file=output_lh5_fn)
+        lh5.write(
+            Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn
+        )
+
+
+def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) -> None:
+    store = LH5Store(keep_open=True)
+
+    # verify that we have the same maps in all files.
+    all_det_ntuples = None
+    for optmap_fn in map_l5_files:
+        maps = lh5.ls(optmap_fn)
+        det_ntuples = [m for m in maps if m not in ("_hitcounts", "_hitcounts_exp")]
+        if all_det_ntuples is not None and det_ntuples != all_det_ntuples:
+            msg = "available optical maps in input files differ"
+            raise ValueError(msg)
+        all_det_ntuples = det_ntuples
+
+    # merge maps one-by-one.
+    def _edges_eq(edges1, edges2):
+        return all(np.all(e1 == e2) for e1, e2 in zip(edges1, edges2, strict=True))
+
+    for d in all_det_ntuples:
+        merged_map = OpticalMap(d, settings)
+        merged_map.h_vertex = merged_map.prepare_hist()
+        merged_nr_gen = merged_map.h_vertex.view()
+        merged_nr_det = merged_map.h_hits.view()
+
+        all_edges = None
+        for optmap_fn in map_l5_files:
+            nr_det = store.read(f"/{d}/nr_det", optmap_fn)[0]
+            assert isinstance(nr_det, Histogram)
+            nr_gen = store.read(f"/{d}/nr_gen", optmap_fn)[0]
+            assert isinstance(nr_gen, Histogram)
+
+            optmap_edges = tuple([b.edges for b in nr_det.binning])
+            optmap_edges_gen = tuple([b.edges for b in nr_gen.binning])
+            assert _edges_eq(optmap_edges, optmap_edges_gen)
+            if all_edges is not None and not _edges_eq(optmap_edges, all_edges):
+                msg = "edges of input optical maps differ"
+                raise ValueError(msg)
+            all_edges = optmap_edges
+
+            # now that we validated that they are equal, add up the actual data (in counts).
+            merged_nr_det += nr_det.weights.nda
+            merged_nr_gen += nr_gen.weights.nda
+
+        merged_map.create_probability()
+        merged_map.check_histograms()
+        merged_map.write_lh5(lh5_file=output_lh5_fn, group=d)
+
+    # merge hitcounts.
+    hits_per_primary = np.zeros(10, dtype=np.int64)
+    hits_per_primary_len = 0
+    for optmap_fn in map_l5_files:
+        hitcounts = store.read("/_hitcounts", optmap_fn)[0]
+        assert isinstance(hitcounts, Array)
+        hits_per_primary[0 : len(hitcounts)] += hitcounts
+        hits_per_primary_len = max(hits_per_primary_len, len(hitcounts))
+
+    hits_per_primary = hits_per_primary[0:hits_per_primary_len]
+    lh5.write(Array(hits_per_primary), "_hitcounts", lh5_file=output_lh5_fn)
+
+    # re-calculate hotcounts exponent.
+    hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
+    lh5.write(
+        Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn
+    )

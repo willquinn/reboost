@@ -51,6 +51,21 @@ def optical_cli() -> None:
     mapview_parser = subparsers.add_parser("viewmap", help="view optical map")
     mapview_parser.add_argument("input", help="input evt LH5 file", metavar="INPUT_MAP")
 
+    # STEP 2c: merge maps
+    mapmerge_parser = subparsers.add_parser("mergemap", help="merge optical maps")
+    mapmerge_parser.add_argument(
+        "input", help="input map LH5 files", metavar="INPUT_MAP", nargs="+"
+    )
+    mapmerge_parser.add_argument(
+        "output", help="output map LH5 file", metavar="OUTPUT_MAP"
+    )
+    mapmerge_parser.add_argument(
+        "--settings",
+        action="store",
+        help="""Select a config file for binning.""",
+        required=True,
+    )
+
     args = parser.parse_args()
 
     handler = colorlog.StreamHandler()
@@ -90,3 +105,13 @@ def optical_cli() -> None:
         from reboost.optical.mapview import view_optmap
 
         view_optmap(args.input)
+
+    # STEP 2c: merge maps
+    if args.command == "mergemap":
+        from reboost.optical.create import merge_optical_maps
+
+        # load settings for binning from config file.
+        with Path.open(args.settings) as settings_f:
+            settings = json.load(settings_f)
+
+        merge_optical_maps(args.input, args.output, settings)
