@@ -50,6 +50,12 @@ def optical_cli() -> None:
     # STEP 2b: view maps
     mapview_parser = subparsers.add_parser("viewmap", help="view optical map")
     mapview_parser.add_argument("input", help="input evt LH5 file", metavar="INPUT_MAP")
+    mapview_parser.add_argument(
+        "--channel",
+        action="store",
+        default="all",
+        help="default: %(default)s",
+    )
 
     # STEP 2c: merge maps
     mapmerge_parser = subparsers.add_parser("mergemap", help="merge optical maps")
@@ -137,7 +143,7 @@ def optical_cli() -> None:
     if args.command == "viewmap":
         from reboost.optical.mapview import view_optmap
 
-        view_optmap(args.input)
+        view_optmap(args.input, args.channel)
 
     # STEP 2c: merge maps
     if args.command == "mergemap":

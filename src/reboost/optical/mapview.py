@@ -24,7 +24,7 @@ def _get_weights(viewdata: dict):
 def _slice_text(viewdata: dict) -> str:
     axis_name = ["x", "y", "z"][viewdata["axis"]]
     axis_pos = viewdata["edges"][viewdata["axis"]][viewdata["idx"]]
-    return f"slice {axis_name} = {axis_pos:.2f}"
+    return f"{viewdata['detid']} | slice {axis_name} = {axis_pos:.2f}"
 
 
 def _process_key(event):
@@ -63,6 +63,7 @@ def view_optmap(optmap_fn: str, detid: str = "all", start_axis: int = 2) -> None
     fig.__reboost = {
         "axis": start_axis,
         "weights": optmap_weights,
+        "detid": detid,
         "edges": optmap_edges,
         "idx": int(optmap_edges[start_axis].shape[0] / 2),
     }
