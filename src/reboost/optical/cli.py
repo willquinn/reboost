@@ -66,6 +66,39 @@ def optical_cli() -> None:
         required=True,
     )
 
+    # STEP 3: convolve with hits from non-optical simulations
+    convolve_parser = subparsers.add_parser(
+        "convolve", help="convolve non-optical hits with optical map"
+    )
+    convolve_parser.add_argument(
+        "--material",
+        action="store",
+        choices=("lar", "pen", "fib"),
+        default="lar",
+        help="default: %(default)s",
+    )
+    convolve_parser.add_argument(
+        "--map",
+        action="store",
+        required=True,
+        metavar="INPUT_MAP",
+        help="input map LH5 file",
+    )
+    convolve_parser.add_argument(
+        "--edep",
+        action="store",
+        required=True,
+        metavar="INPUT_EDEP",
+        help="input non-optical LH5 hit file",
+    )
+    convolve_parser.add_argument(
+        "--edep-lgdo",
+        action="store",
+        required=True,
+        metavar="LGDO_PATH",
+        help="path to LGDO inside non-optical LH5 hit file (e.g. /hit/detXX)",
+    )
+
     args = parser.parse_args()
 
     handler = colorlog.StreamHandler()
@@ -115,3 +148,9 @@ def optical_cli() -> None:
             settings = json.load(settings_f)
 
         merge_optical_maps(args.input, args.output, settings)
+
+    # STEP 3: convolve with hits from non-optical simulations
+    if args.command == "convolve":
+        from reboost.optical.convolve import convolve
+
+        convolve(args.map, args.edep, args.edep_lgdo, args.material)
