@@ -38,8 +38,7 @@ def _optmaps_for_channels(
     log.info("creating empty optmaps")
     optmap_count = len(optmap_det_ids) + 1
     optmaps = [
-        OpticalMap("all" if i == 0 else optmap_det_ids[i], settings)
-        for i in range(optmap_count)
+        OpticalMap("all" if i == 0 else optmap_det_ids[i], settings) for i in range(optmap_count)
     ]
 
     return all_det_ids, eff, optmaps, optmap_det_ids
@@ -61,13 +60,7 @@ def _compute_hit_maps(hitcounts, eff, rng, optmap_count):
     return mask
 
 
-def _fill_hit_maps(
-    optmaps: list[OpticalMap],
-    loc,
-    hitcounts: NDArray,
-    eff: NDArray,
-    rng,
-):
+def _fill_hit_maps(optmaps: list[OpticalMap], loc, hitcounts: NDArray, eff: NDArray, rng):
     masks = _compute_hit_maps(hitcounts, eff, rng, len(optmaps))
 
     for i in range(len(optmaps)):
@@ -151,9 +144,7 @@ def create_optical_maps(
 
     if output_lh5_fn is not None:
         lh5.write(Array(hits_per_primary), "_hitcounts", lh5_file=output_lh5_fn)
-        lh5.write(
-            Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn
-        )
+        lh5.write(Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn)
 
 
 def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) -> None:
@@ -216,6 +207,4 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
 
     # re-calculate hotcounts exponent.
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
-    lh5.write(
-        Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn
-    )
+    lh5.write(Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn)

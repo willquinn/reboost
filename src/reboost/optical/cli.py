@@ -26,25 +26,19 @@ def optical_cli() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # STEP 1: build evt file from hit tier
-    evt_parser = subparsers.add_parser(
-        "evt", help="build evt file from remage hit file"
-    )
+    evt_parser = subparsers.add_parser("evt", help="build evt file from remage hit file")
     evt_parser.add_argument("input", help="input hit LH5 file", metavar="INPUT_HIT")
     evt_parser.add_argument("output", help="output evt LH5 file", metavar="OUTPUT_EVT")
 
     # STEP 2a: build map file from evt tier
-    map_parser = subparsers.add_parser(
-        "createmap", help="build optical map from evt file(s)"
-    )
+    map_parser = subparsers.add_parser("createmap", help="build optical map from evt file(s)")
     map_parser.add_argument(
         "--settings",
         action="store",
         help="""Select a config file for binning.""",
         required=True,
     )
-    map_parser.add_argument(
-        "input", help="input evt LH5 file", metavar="INPUT_EVT", nargs="+"
-    )
+    map_parser.add_argument("input", help="input evt LH5 file", metavar="INPUT_EVT", nargs="+")
     map_parser.add_argument("output", help="output map LH5 file", metavar="OUTPUT_MAP")
 
     # STEP 2b: view maps
@@ -62,9 +56,7 @@ def optical_cli() -> None:
     mapmerge_parser.add_argument(
         "input", help="input map LH5 files", metavar="INPUT_MAP", nargs="+"
     )
-    mapmerge_parser.add_argument(
-        "output", help="output map LH5 file", metavar="OUTPUT_MAP"
-    )
+    mapmerge_parser.add_argument("output", help="output map LH5 file", metavar="OUTPUT_MAP")
     mapmerge_parser.add_argument(
         "--settings",
         action="store",

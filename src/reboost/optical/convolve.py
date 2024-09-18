@@ -44,7 +44,8 @@ def open_optmap(optmap_fn: str):
         optmap_weights[i] = optmap.weights.nda
         optmap_weights[i][optmap_weights[i] < 0] = 0
 
-    # if we have any individual channels registered, the sum is potentially larger than the probability to find _any_ hit.
+    # if we have any individual channels registered, the sum is potentially larger than the
+    # probability to find _any_ hit.
     if len(detidx) != 0:
         optmap_weights[OPTMAP_SUM_CH] = np.sum(optmap_weights[0:-2], axis=0)
         optmap_weights[OPTMAP_SUM_CH][optmap_weights[-2] < 0] = 0
@@ -72,28 +73,17 @@ def iterate_stepwise_depositions(
     rng: np.random.Generator = None,
 ):
     # those np functions are not supported by numba, but needed for efficient array access below.
-    x0 = structured_to_unstructured(
-        edep_df[["xloc_pre", "yloc_pre", "zloc_pre"]], np.float64
-    )
-    x1 = structured_to_unstructured(
-        edep_df[["xloc_post", "yloc_post", "zloc_post"]], np.float64
-    )
+    x0 = structured_to_unstructured(edep_df[["xloc_pre", "yloc_pre", "zloc_pre"]], np.float64)
+    x1 = structured_to_unstructured(edep_df[["xloc_post", "yloc_post", "zloc_post"]], np.float64)
 
     rng = np.random.default_rng() if rng is None else rng
 
     output_map, res = _iterate_stepwise_depositions(
-        edep_df,
-        x0,
-        x1,
-        rng,
-        *optmap_for_convolve,
-        scint_mat_params,
+        edep_df, x0, x1, rng, *optmap_for_convolve, scint_mat_params
     )
     if res["oob"] > 0:
         log.warning(
-            "had edep out of map bounds: %d (%.2f%%)",
-            res["oob"],
-            (res["oob"] / res["ib"]) * 100,
+            "had edep out of map bounds: %d (%.2f%%)", res["oob"], (res["oob"] / res["ib"]) * 100
         )
     log.debug(
         "VUV_primary %d ->hits_any %d ->hits %d (%.2f %% primaries detected)",
@@ -149,10 +139,7 @@ def _iterate_stepwise_depositions(
 
         # get the particle information.
         if t.particle not in pdgid_map:
-            pdgid_map[t.particle] = (
-                _pdgid_to_particle(t.particle),
-                _pdg_func.charge(t.particle),
-            )
+            pdgid_map[t.particle] = (_pdgid_to_particle(t.particle), _pdg_func.charge(t.particle))
 
         # do the scintillation.
         part, charge = pdgid_map[t.particle]
@@ -208,9 +195,7 @@ def _iterate_stepwise_depositions(
 
             # should be equivalent to rng.choice(detidx, size=(detsel_size, p=detp)
             detsel = detidx[
-                np.searchsorted(
-                    np.cumsum(detp), rng.random(size=(detsel_size,)), side="right"
-                )
+                np.searchsorted(np.cumsum(detp), rng.random(size=(detsel_size,)), side="right")
             ]
             for d in detsel:
                 hitcount[d, j] += 1
@@ -230,20 +215,12 @@ def _iterate_stepwise_depositions(
                     if hc_d_plane_len == 0:
                         continue
 
-                    out_times[out_idx : out_idx + hc_d_plane_len] = scint_times[
-                        hc_d_plane, 0
-                    ]
+                    out_times[out_idx : out_idx + hc_d_plane_len] = scint_times[hc_d_plane, 0]
                     out_det[out_idx : out_idx + hc_d_plane_len] = detids[d]
                     out_idx += hc_d_plane_len
             output_map[np.int64(rowid)] = (t.evtid, out_det, out_times)
 
-    stats = {
-        "oob": oob,
-        "ib": ib,
-        "vuv_primary": ph_cnt,
-        "hits_any": ph_det,
-        "hits": ph_det2,
-    }
+    stats = {"oob": oob, "ib": ib, "vuv_primary": ph_cnt, "hits_any": ph_det, "hits": ph_det2}
     return output_map, stats
 
 
@@ -262,18 +239,12 @@ def get_output_table(output_map):
         out_times[out_idx : out_idx + o_len] = times
         out_idx += o_len
 
-    tbl = Table(
-        {"evtid": Array(out_evtid), "detid": Array(out_det), "time": Array(out_times)}
-    )
+    tbl = Table({"evtid": Array(out_evtid), "detid": Array(out_det), "time": Array(out_times)})
     return ph_count_o, tbl
 
 
 def convolve(
-    map_file: str,
-    edep_file: str,
-    edep_path: str,
-    material: str,
-    output_file: str | None = None,
+    map_file: str, edep_file: str, edep_path: str, material: str, output_file: str | None = None
 ):
     if material not in ["lar", "pen"]:
         msg = f"unknown material {material} for scintillation"
@@ -298,18 +269,10 @@ def convolve(
     edep_df = edep_table.view_as("pd").to_records()
 
     log.info("start event processing")
-    output_map = iterate_stepwise_depositions(
-        edep_df,
-        optmap_for_convolve,
-        scint_mat_params,
-    )
+    output_map = iterate_stepwise_depositions(edep_df, optmap_for_convolve, scint_mat_params)
 
     log.info("store output photon hits")
     ph_count_o, tbl = get_output_table(output_map)
-    log.debug(
-        "output photons: %d energy depositions -> %d photons",
-        len(output_map),
-        ph_count_o,
-    )
+    log.debug("output photons: %d energy depositions -> %d photons", len(output_map), ph_count_o)
     if output_file is not None:
         lh5.write(tbl, "optical", lh5_file=output_file, group="hit")

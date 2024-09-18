@@ -68,9 +68,7 @@ class OpticalMap:
 
         # compute uncertainty according to Bernoulli statistics.
         # TODO: this does not make sense for ratio==1
-        ratio_err[h2 != 0] = np.sqrt(
-            (ratio[h2 != 0]) * (1 - ratio[h2 != 0]) / h2[h2 != 0]
-        )
+        ratio_err[h2 != 0] = np.sqrt((ratio[h2 != 0]) * (1 - ratio[h2 != 0]) / h2[h2 != 0])
         ratio_err[h2 == 0] = -1  # -1 denotes no statistics.
 
         # print(np.sum(ratio > 0), np.sum(ratio[h2 != 0] == 1), np.sum(ratio_err > 0)))

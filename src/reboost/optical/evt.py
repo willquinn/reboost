@@ -43,12 +43,7 @@ def build_optmap_evt(lh5_in_file: str, lh5_out_file: str) -> None:
     assert hits_sum == len(opti_df)
 
     log.info("store evt file %s", lh5_out_file)
-    lh5.write(
-        Table(vert_df),
-        name="optmap_evt",
-        lh5_file=lh5_out_file,
-        wo_mode="overwrite_file",
-    )
+    lh5.write(Table(vert_df), name="optmap_evt", lh5_file=lh5_out_file, wo_mode="overwrite_file")
 
 
 def read_optmap_evt(lh5_file: str):

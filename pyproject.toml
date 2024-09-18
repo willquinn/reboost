@@ -99,6 +99,7 @@ testpaths = "tests"
 
 [tool.ruff]
 src = ["src"]
+line-length = 100
 
 [tool.ruff.lint]
 extend-select = [
