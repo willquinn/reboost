@@ -7,7 +7,7 @@ import numpy as np
 import pint
 from legendoptics import lar
 from lgdo import lh5
-from lgdo.lh5 import LH5Store
+from lgdo.lh5 import LH5Iterator, LH5Store
 from lgdo.types import Array, Table
 from numba import njit, prange
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -155,6 +155,8 @@ def _iterate_stepwise_depositions(
             t.edep,
             rng,
         )
+        if scint_times.shape[0] == 0:  # short-circuit if we have no photons at all.
+            continue
         ph_cnt += scint_times.shape[0]
 
         # coordinates -> bins of the optical map.
@@ -244,7 +246,12 @@ def get_output_table(output_map):
 
 
 def convolve(
-    map_file: str, edep_file: str, edep_path: str, material: str, output_file: str | None = None
+    map_file: str,
+    edep_file: str,
+    edep_path: str,
+    material: str,
+    output_file: str | None = None,
+    buffer_len: int = int(1e6),
 ):
     if material not in ["lar", "pen"]:
         msg = f"unknown material {material} for scintillation"
@@ -265,14 +272,18 @@ def convolve(
     optmap_for_convolve = open_optmap(map_file)
 
     log.info("opening energy deposition hit output %s", edep_file)
-    edep_table = lh5.read(edep_path, edep_file)
-    edep_df = edep_table.view_as("pd").to_records()
+    it = LH5Iterator(edep_file, edep_path, buffer_len=buffer_len)
+    for it_count, (edep_lgdo, edep_events, edep_n_rows) in enumerate(it):
+        assert (it_count == 0) == (edep_events == 0)
+        edep_df = edep_lgdo.view_as("pd").iloc[0:edep_n_rows].to_records()
 
-    log.info("start event processing")
-    output_map = iterate_stepwise_depositions(edep_df, optmap_for_convolve, scint_mat_params)
+        log.info("start event processing (%d)", it_count)
+        output_map = iterate_stepwise_depositions(edep_df, optmap_for_convolve, scint_mat_params)
 
-    log.info("store output photon hits")
-    ph_count_o, tbl = get_output_table(output_map)
-    log.debug("output photons: %d energy depositions -> %d photons", len(output_map), ph_count_o)
-    if output_file is not None:
-        lh5.write(tbl, "optical", lh5_file=output_file, group="hit")
+        log.info("store output photon hits (%d)", it_count)
+        ph_count_o, tbl = get_output_table(output_map)
+        log.debug(
+            "output photons: %d energy depositions -> %d photons", len(output_map), ph_count_o
+        )
+        if output_file is not None:
+            lh5.write(tbl, "optical", lh5_file=output_file, group="hit", wo_mode="append")

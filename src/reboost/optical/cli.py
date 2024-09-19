@@ -23,6 +23,14 @@ def optical_cli() -> None:
         help="""Increase the program verbosity""",
     )
 
+    parser.add_argument(
+        "--bufsize",
+        action="store",
+        type=int,
+        default=int(5e6),
+        help="""Row count for input table buffering (only used if applicable)""",
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # STEP 1: build evt file from hit tier
@@ -96,6 +104,7 @@ def optical_cli() -> None:
         metavar="LGDO_PATH",
         help="path to LGDO inside non-optical LH5 hit file (e.g. /hit/detXX)",
     )
+    convolve_parser.add_argument("--output", help="output hit LH5 file", metavar="OUTPUT_HIT")
 
     args = parser.parse_args()
 
@@ -123,7 +132,7 @@ def optical_cli() -> None:
         with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
-        optmap_events = read_optmap_evt(args.input)
+        optmap_events = read_optmap_evt(args.input, args.bufsize)
         create_optical_maps(
             optmap_events,
             settings,
@@ -151,4 +160,4 @@ def optical_cli() -> None:
     if args.command == "convolve":
         from reboost.optical.convolve import convolve
 
-        convolve(args.map, args.edep, args.edep_lgdo, args.material)
+        convolve(args.map, args.edep, args.edep_lgdo, args.material, args.output, args.bufsize)

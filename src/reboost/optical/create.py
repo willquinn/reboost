@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import scipy.optimize
 from lgdo import lh5
-from lgdo.lh5 import LH5Store
+from lgdo.lh5 import LH5Iterator, LH5Store
 from lgdo.types import Array, Histogram, Scalar
 from numba import njit
 from numpy.typing import NDArray
@@ -94,7 +94,7 @@ def _fit_multi_ph_detection(hits_per_primary) -> float:
 
 
 def create_optical_maps(
-    optmap_events: pd.DataFrame,
+    optmap_events_it: LH5Iterator,
     settings,
     chfilter=(),
     output_lh5_fn=None,
@@ -103,33 +103,43 @@ def create_optical_maps(
     """
     Parameters
     ----------
-    optmap_events
-        :class:`pd.DataFrame` with columns ``{x,y,z}loc`` and one column (with numeric header) for
-        each SiPM channel.
+    optmap_events_it
+        :class:`LH5Iterator` of a table with columns ``{x,y,z}loc`` and one column (with numeric
+        header) for each SiPM channel.
     chfilter
         tuple of detector ids that will be included in the resulting optmap. Those have to match
-        the column names in ``optmap_events``.
+        the column names in ``optmap_events_it``.
     """
+    optmap_events = optmap_events_it.read(0)[0].view_as("pd")
     all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
         optmap_events, settings, chfilter=chfilter
     )
 
-    hitcounts = optmap_events[all_det_ids].to_numpy()
-    loc = optmap_events[["xloc", "yloc", "zloc"]].to_numpy()
+    hits_per_primary = np.zeros(10, dtype=np.int64)
+    hits_per_primary_len = 0
+    for it_count, (events_lgdo, events_entry, event_n_rows) in enumerate(optmap_events_it):
+        assert (it_count == 0) == (events_entry == 0)
+        optmap_events = events_lgdo.view_as("pd").iloc[0:event_n_rows]
+        hitcounts = optmap_events[all_det_ids].to_numpy()
+        loc = optmap_events[["xloc", "yloc", "zloc"]].to_numpy()
 
-    log.info("creating vertex histogram")
-    optmaps[0].fill_vertex(loc)
-    for i in range(1, len(optmaps)):
-        optmaps[i].h_vertex = optmaps[0].h_vertex
+        log.info("filling vertex histogram (%d)", it_count)
+        optmaps[0].fill_vertex(loc)
+        for i in range(1, len(optmaps)):
+            optmaps[i].h_vertex = optmaps[0].h_vertex
 
-    log.info("computing map")
-    rng = np.random.default_rng()
+        log.info("computing map (%d)", it_count)
+        rng = np.random.default_rng()
 
-    _fill_hit_maps(optmaps, loc, hitcounts, eff, rng)
-    hits_per_primary = _count_multi_ph_detection(hitcounts)
+        _fill_hit_maps(optmaps, loc, hitcounts, eff, rng)
+        hpp = _count_multi_ph_detection(hitcounts)
+        hits_per_primary_len = max(hits_per_primary_len, len(hpp))
+        hits_per_primary[0 : len(hpp)] += hpp
+
+    hits_per_primary = hits_per_primary[0:hits_per_primary_len]
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
 
-    log.info("computing probability and storing")
+    log.info("computing probability and storing to %s", output_lh5_fn)
     for i in range(len(optmaps)):
         optmaps[i].create_probability()
         optmaps[i].check_histograms()

@@ -46,5 +46,5 @@ def build_optmap_evt(lh5_in_file: str, lh5_out_file: str) -> None:
     lh5.write(Table(vert_df), name="optmap_evt", lh5_file=lh5_out_file, wo_mode="overwrite_file")
 
 
-def read_optmap_evt(lh5_file: str):
-    return lh5.read("optmap_evt", lh5_file).view_as("pd")
+def read_optmap_evt(lh5_file: str, buffer_len: int = int(5e6)) -> lh5.LH5Iterator:
+    return lh5.LH5Iterator(lh5_file, "optmap_evt", buffer_len=buffer_len)
