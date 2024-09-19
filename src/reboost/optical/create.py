@@ -46,7 +46,7 @@ def _optmaps_for_channels(
 
 @njit(cache=True)
 def _compute_hit_maps(hitcounts, eff, rng, optmap_count):
-    mask = np.zeros((hitcounts.shape[0], optmap_count), dtype=np.bool)
+    mask = np.zeros((hitcounts.shape[0], optmap_count), dtype=np.bool_)
     counts = hitcounts.sum(axis=1)
     for idx in range(hitcounts.shape[0]):
         if counts[idx] == 0:
@@ -160,10 +160,10 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
             raise ValueError(msg)
         all_det_ntuples = det_ntuples
 
-    # merge maps one-by-one.
-    def _edges_eq(edges1, edges2):
-        return all(np.all(e1 == e2) for e1, e2 in zip(edges1, edges2, strict=True))
+    def _edges_eq(e1: tuple[NDArray], e2: tuple[NDArray]):
+        return len(e1) == len(e2) and all(np.all(x1 == x2) for x1, x2 in zip(e1, e2))
 
+    # merge maps one-by-one.
     for d in all_det_ntuples:
         merged_map = OpticalMap(d, settings)
         merged_map.h_vertex = merged_map.prepare_hist()

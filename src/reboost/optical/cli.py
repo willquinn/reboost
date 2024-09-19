@@ -120,7 +120,7 @@ def optical_cli() -> None:
         from reboost.optical.evt import read_optmap_evt
 
         # load settings for binning from config file.
-        with Path.open(args.settings) as settings_f:
+        with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
         optmap_events = read_optmap_evt(args.input)
@@ -142,7 +142,7 @@ def optical_cli() -> None:
         from reboost.optical.create import merge_optical_maps
 
         # load settings for binning from config file.
-        with Path.open(args.settings) as settings_f:
+        with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
         merge_optical_maps(args.input, args.output, settings)

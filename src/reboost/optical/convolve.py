@@ -39,7 +39,7 @@ def open_optmap(optmap_fn: str):
     # TODO: somehow get statistics on missing voxels that would have been needed
     optmap_weights[OPTMAP_ANY_CH] = optmap_all.weights.nda
     optmap_weights[OPTMAP_ANY_CH][optmap_weights[OPTMAP_ANY_CH] < 0] = 0
-    for i, nt in zip(detidx, det_ntuples, strict=True):
+    for i, nt in zip(detidx, det_ntuples):
         optmap = store.read(f"/{nt}/p_det", optmap_fn)[0]
         optmap_weights[i] = optmap.weights.nda
         optmap_weights[i][optmap_weights[i] < 0] = 0
