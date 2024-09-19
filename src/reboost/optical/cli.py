@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 import colorlog
@@ -121,6 +122,8 @@ def optical_cli() -> None:
     if args.command == "evt":
         from reboost.optical.evt import build_optmap_evt
 
+        _check_input_file(parser, args.input)
+        _check_output_file(parser, args.output)
         build_optmap_evt(args.input, args.output)
 
     # STEP 2a: build map file from evt tier
@@ -128,7 +131,11 @@ def optical_cli() -> None:
         from reboost.optical.create import create_optical_maps
         from reboost.optical.evt import read_optmap_evt
 
+        _check_input_file(parser, args.input)
+        _check_output_file(parser, args.output)
+
         # load settings for binning from config file.
+        _check_input_file(parser, args.input, "settings")
         with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
@@ -144,6 +151,7 @@ def optical_cli() -> None:
     if args.command == "viewmap":
         from reboost.optical.mapview import view_optmap
 
+        _check_input_file(parser, args.input)
         view_optmap(args.input, args.channel)
 
     # STEP 2c: merge maps
@@ -151,13 +159,30 @@ def optical_cli() -> None:
         from reboost.optical.create import merge_optical_maps
 
         # load settings for binning from config file.
+        _check_input_file(parser, args.input, "settings")
         with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
+        _check_input_file(parser, args.input)
+        _check_output_file(parser, args.output)
         merge_optical_maps(args.input, args.output, settings)
 
     # STEP 3: convolve with hits from non-optical simulations
     if args.command == "convolve":
         from reboost.optical.convolve import convolve
 
+        _check_input_file(parser, [args.map, args.edep])
+        _check_output_file(parser, args.output)
         convolve(args.map, args.edep, args.edep_lgdo, args.material, args.output, args.bufsize)
+
+
+def _check_input_file(parser, file: str | Iterable[str], descr: str = "input"):
+    file = (file,) if isinstance(file, str) else file
+    not_existing = [f for f in file if not Path(f).exists()]
+    if not_existing != []:
+        parser.error(f"{descr} file(s) {''.join(not_existing)} missing")
+
+
+def _check_output_file(parser, file: str):
+    if Path(file).exists():
+        parser.error(f"output file {file} already exists")
