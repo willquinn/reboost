@@ -51,12 +51,26 @@ def _process_key(event):
     fig.canvas.draw()
 
 
-def view_optmap(optmap_fn: str, detid: str = "all", start_axis: int = 2) -> None:
+def view_optmap(
+    optmap_fn: str, detid: str = "all", start_axis: int = 2, cmap_min: float = 1e-4
+) -> None:
     store = LH5Store(keep_open=True)
 
     optmap_all = store.read(f"/{detid}/p_det", optmap_fn)[0]
     optmap_edges = tuple([b.edges for b in optmap_all.binning])
-    optmap_weights = optmap_all.weights.nda
+    optmap_weights = optmap_all.weights.nda.copy()
+
+    outside_count = np.sum((optmap_weights > 0) & (optmap_weights < cmap_min))
+    if outside_count > 0:
+        log.warning(
+            "%d cells are non-zero and lower than the current colorbar minimum %.2e",
+            outside_count,
+            cmap_min,
+        )
+    # set zero/close-to-zero values to a very small, but nonzero value. This means we can
+    # style those cells using the `under` style and, can style `bad` (i.e. everything < 0
+    # after this re-assignment) in a different way.
+    optmap_weights[(optmap_weights >= 0) & (optmap_weights < 1e-50)] = min(1e-10, cmap_min)
 
     fig = plt.figure()
     fig.canvas.mpl_connect("key_press_event", _process_key)
@@ -67,12 +81,12 @@ def view_optmap(optmap_fn: str, detid: str = "all", start_axis: int = 2) -> None
         "edges": optmap_edges,
         "idx": int(optmap_edges[start_axis].shape[0] / 2),
     }
-    cmap = plt.cm.inferno.with_extremes(bad="w", under="w")
+
+    cmap = plt.cm.plasma.with_extremes(bad="w", under="gray")
     weights, extent = _get_weights(fig.__reboost)
     plt.imshow(
         weights[fig.__reboost["idx"]],
-        # norm=colors.Normalize(vmin=1e-100),
-        norm=colors.LogNorm(vmin=1e-4),
+        norm=colors.LogNorm(vmin=cmap_min),
         aspect=1,
         interpolation="none",
         cmap=cmap,
@@ -80,6 +94,5 @@ def view_optmap(optmap_fn: str, detid: str = "all", start_axis: int = 2) -> None
     )
 
     plt.text(0, 1.02, _slice_text(fig.__reboost), transform=fig.axes[0].transAxes)
-
     plt.colorbar()
     plt.show()
