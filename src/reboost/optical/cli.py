@@ -29,13 +29,18 @@ def optical_cli() -> None:
         action="store",
         type=int,
         default=int(5e6),
-        help="""Row count for input table buffering (only used if applicable)""",
+        help="""Row count for input table buffering (only used if applicable). default: %(default)e""",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # STEP 1: build evt file from hit tier
     evt_parser = subparsers.add_parser("evt", help="build evt file from remage hit file")
+    evt_parser.add_argument(
+        "--detectors",
+        help="file that contains a list of detector ids that are part of the input file",
+        required=True,
+    )
     evt_parser.add_argument("input", help="input hit LH5 file", metavar="INPUT_HIT")
     evt_parser.add_argument("output", help="output evt LH5 file", metavar="OUTPUT_EVT")
 
@@ -122,9 +127,15 @@ def optical_cli() -> None:
     if args.command == "evt":
         from reboost.optical.evt import build_optmap_evt
 
+        _check_input_file(parser, args.detectors)
         _check_input_file(parser, args.input)
         _check_output_file(parser, args.output)
-        build_optmap_evt(args.input, args.output)
+
+        # load detector ids from a JSON array
+        with Path.open(Path(args.detectors)) as detectors_f:
+            detectors = json.load(detectors_f)
+
+        build_optmap_evt(args.input, args.output, detectors, args.bufsize)
 
     # STEP 2a: build map file from evt tier
     if args.command == "createmap":
