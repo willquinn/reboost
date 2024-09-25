@@ -50,7 +50,8 @@ class OpticalMap:
         )
 
     def fill_vertex(self, loc):
-        self.h_vertex = self.prepare_hist()
+        if self.h_vertex is None:
+            self.h_vertex = self.prepare_hist()
         self.h_vertex.fill(loc[:, 0], loc[:, 1], loc[:, 2])
 
     def _divide_hist(self, h1: hist.Hist, h2: hist.Hist) -> tuple[hist.Hist, hist.Hist]:
@@ -66,12 +67,14 @@ class OpticalMap:
         ratio[:] = np.divide(h1, h2, where=(h2 != 0))
         ratio[h2 == 0] = -1  # -1 denotes no statistics.
 
+        if np.any(ratio > 1):
+            msg = "encountered cell(s) with more hits then primaries"
+            raise RuntimeError(msg)
+
         # compute uncertainty according to Bernoulli statistics.
         # TODO: this does not make sense for ratio==1
         ratio_err[h2 != 0] = np.sqrt((ratio[h2 != 0]) * (1 - ratio[h2 != 0]) / h2[h2 != 0])
         ratio_err[h2 == 0] = -1  # -1 denotes no statistics.
-
-        # print(np.sum(ratio > 0), np.sum(ratio[h2 != 0] == 1), np.sum(ratio_err > 0)))
 
         return ratio_hist, ratio_err_hist
 

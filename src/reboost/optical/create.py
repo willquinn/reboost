@@ -117,6 +117,7 @@ def create_optical_maps(
 
     hits_per_primary = np.zeros(10, dtype=np.int64)
     hits_per_primary_len = 0
+    rng = np.random.default_rng()
     for it_count, (events_lgdo, events_entry, event_n_rows) in enumerate(optmap_events_it):
         assert (it_count == 0) == (events_entry == 0)
         optmap_events = events_lgdo.view_as("pd").iloc[0:event_n_rows]
@@ -125,12 +126,8 @@ def create_optical_maps(
 
         log.info("filling vertex histogram (%d)", it_count)
         optmaps[0].fill_vertex(loc)
-        for i in range(1, len(optmaps)):
-            optmaps[i].h_vertex = optmaps[0].h_vertex
 
         log.info("computing map (%d)", it_count)
-        rng = np.random.default_rng()
-
         _fill_hit_maps(optmaps, loc, hitcounts, eff, rng)
         hpp = _count_multi_ph_detection(hitcounts)
         hits_per_primary_len = max(hits_per_primary_len, len(hpp))
@@ -138,6 +135,10 @@ def create_optical_maps(
 
     hits_per_primary = hits_per_primary[0:hits_per_primary_len]
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
+
+    # all maps share the same vertex histogram.
+    for i in range(1, len(optmaps)):
+        optmaps[i].h_vertex = optmaps[0].h_vertex
 
     log.info("computing probability and storing to %s", output_lh5_fn)
     for i in range(len(optmaps)):
