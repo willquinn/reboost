@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 def build_optmap_evt(
     lh5_in_file: str, lh5_out_file: str, detectors: Iterable[str | int], buffer_len: int = int(5e6)
 ) -> None:
+    """Create a faster map for lookup of the hits in each detector, for each primary event."""
     log.info("reading file %s", lh5_in_file)
 
     vert_it = LH5Iterator(lh5_in_file, "hit/vertices", buffer_len=buffer_len)
@@ -42,8 +43,11 @@ def build_optmap_evt(
             if evtid < vert_df_bounds[0]:
                 msg = "non-monotonic evtid encountered, but cannot go back"
                 raise KeyError(msg)
-            if evtid > vert_df_bounds[0] and evtid < vert_df_bounds[1]:
+            if evtid >= vert_df_bounds[0] and evtid <= vert_df_bounds[1]:
                 return  # vert_df already contains the given evtid.
+
+        # here, evtid > vert_df_bounds[1] (or vert_df_bounds is still None). We need to fetch
+        # the next event table chunk.
 
         vert_it_count += 1
         # we have filled a dataframe, save it to disk.
@@ -71,14 +75,13 @@ def build_optmap_evt(
             vert_df[d] = hit_count_type(0)
 
     log.info("prepare evt table")
-    # use smaller integer types uint16 to spare RAM when storing types.
+    # use smaller integer type uint16 to spare RAM when storing types.
     hit_count_type = np.uint16
     for opti_it_count, (opti_lgdo, opti_entry, opti_n_rows) in enumerate(opti_it):
         assert (opti_it_count == 0) == (opti_entry == 0)
         opti_df = opti_lgdo.view_as("pd").iloc[0:opti_n_rows]
 
         log.info("build evt table (%d)", opti_it_count)
-        # create a (fast) map for lookup of the hits in each detector.
         for t in opti_df[["evtid", "det_uid"]].itertuples(name=None, index=False):
             _ensure_vert_df(vert_it, t[0])
             vert_df.loc[t[0], str(t[1])] += 1
