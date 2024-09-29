@@ -15,12 +15,35 @@ class OpticalMap:
         self.settings = settings
 
         self.h_vertex = None
-        self.h_hits = self.prepare_hist()
+        self.h_hits = None
         self.h_prob = None
         self.h_prob_uncert = None
         self.name = name
 
-    def prepare_hist(self, **hist_kwargs):
+    def create_empty(name: str, settings: Mapping[str, str]) -> OpticalMap:
+        om = OpticalMap(name, settings)
+        om.h_vertex = om._prepare_hist()
+        om.h_hits = om._prepare_hist()
+        return om
+
+    @staticmethod
+    def load_from_file(lh5_file: str, group: str) -> OpticalMap:
+        om = OpticalMap(group, None)
+
+        def read_hist(name: str, fn: str, group: str = "all"):
+            h = lh5.read(f"/{group}/{name}", lh5_file=fn)
+            if not isinstance(h, Histogram):
+                msg = f"encountered invalid optical map while reading /{group}/{name} in {fn}"
+                raise ValueError(msg)
+            return h.view_as("hist")
+
+        om.h_vertex = read_hist("nr_gen", lh5_file, group=group)
+        om.h_hits = read_hist("nr_det", lh5_file, group=group)
+        om.h_prob = read_hist("p_det", lh5_file, group=group)
+        om.h_prob_uncert = read_hist("p_det_err", lh5_file, group=group)
+        return om
+
+    def _prepare_hist(self, **hist_kwargs) -> hist.Hist:
         """Prepare an empty histogram with the parameters global to this run."""
         bounds = self.settings["range_in_m"]
         bins = self.settings["bins"]
@@ -49,19 +72,24 @@ class OpticalMap:
             **hist_kwargs,
         )
 
-    def fill_vertex(self, loc):
+    def fill_vertex(self, loc) -> None:
         if self.h_vertex is None:
-            self.h_vertex = self.prepare_hist()
+            self.h_vertex = self._prepare_hist()
         self.h_vertex.fill(loc[:, 0], loc[:, 1], loc[:, 2])
+
+    def fill_hits(self, loc) -> None:
+        if self.h_hits is None:
+            self.h_hits = self._prepare_hist()
+        self.h_hits.fill(loc[:, 0], loc[:, 1], loc[:, 2])
 
     def _divide_hist(self, h1: hist.Hist, h2: hist.Hist) -> tuple[hist.Hist, hist.Hist]:
         """Calculate the ratio (and its standard error) from two histograms."""
         h1 = h1.view()
         h2 = h2.view()
 
-        ratio_hist = self.prepare_hist()
+        ratio_hist = self._prepare_hist()
         ratio = ratio_hist.view()
-        ratio_err_hist = self.prepare_hist()
+        ratio_err_hist = self._prepare_hist()
         ratio_err = ratio_err_hist.view()
 
         ratio[:] = np.divide(h1, h2, where=(h2 != 0))

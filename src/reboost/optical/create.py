@@ -6,9 +6,8 @@ from typing import Callable, Literal
 import numpy as np
 import pandas as pd
 import scipy.optimize
-from lgdo import lh5
+from lgdo import Array, Histogram, Scalar, lh5
 from lgdo.lh5 import LH5Iterator, LH5Store
-from lgdo.types import Array, Histogram, Scalar
 from numba import njit
 from numpy.typing import NDArray
 
@@ -66,7 +65,7 @@ def _fill_hit_maps(optmaps: list[OpticalMap], loc, hitcounts: NDArray, eff: NDAr
 
     for i in range(len(optmaps)):
         locm = loc[masks[:, i]]
-        optmaps[i].h_hits.fill(locm[:, 0], locm[:, 1], locm[:, 2])
+        optmaps[i].fill_hits(locm)
 
 
 def _count_multi_ph_detection(hitcounts) -> NDArray:
@@ -163,14 +162,18 @@ def create_optical_maps(
         lh5.write(Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn)
 
 
+def list_optical_maps(lh5_file: str) -> list[str]:
+    maps = lh5.ls(lh5_file)
+    return [m for m in maps if m not in ("_hitcounts", "_hitcounts_exp")]
+
+
 def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) -> None:
     store = LH5Store(keep_open=True)
 
     # verify that we have the same maps in all files.
     all_det_ntuples = None
     for optmap_fn in map_l5_files:
-        maps = lh5.ls(optmap_fn)
-        det_ntuples = [m for m in maps if m not in ("_hitcounts", "_hitcounts_exp")]
+        det_ntuples = list_optical_maps(optmap_fn)
         if all_det_ntuples is not None and det_ntuples != all_det_ntuples:
             msg = "available optical maps in input files differ"
             raise ValueError(msg)
@@ -183,8 +186,7 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
 
     # merge maps one-by-one.
     for d in all_det_ntuples:
-        merged_map = OpticalMap(d, settings)
-        merged_map.h_vertex = merged_map.prepare_hist()
+        merged_map = OpticalMap.create_empty(d, settings)
         merged_nr_gen = merged_map.h_vertex.view()
         merged_nr_det = merged_map.h_hits.view()
 
