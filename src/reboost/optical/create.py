@@ -17,7 +17,7 @@ from .optmap import OpticalMap
 log = logging.getLogger(__name__)
 
 
-def get_channel_efficiency(rawid: int) -> float:  # noqa: ARG001
+def get_channel_efficiency(rawid: int, settings) -> float:  # noqa: ARG001
     # TODO: implement
     return 0.99
 
@@ -25,20 +25,21 @@ def get_channel_efficiency(rawid: int) -> float:  # noqa: ARG001
 def _optmaps_for_channels(
     optmap_events: pd.DataFrame,
     settings,
-    chfilter: tuple[str] | Literal["*"] = (),
+    chfilter: tuple[str | int] | Literal["*"] = (),
 ):
     all_det_ids = [ch_id for ch_id in list(optmap_events.columns) if ch_id.isnumeric()]
-    eff = np.array([get_channel_efficiency(int(ch_id)) for ch_id in all_det_ids])
+    eff = np.array([get_channel_efficiency(int(ch_id), settings) for ch_id in all_det_ids])
 
     if chfilter != "*":
-        optmap_det_ids = [det for det in all_det_ids if det in chfilter]
+        optmap_det_ids = [det for det in all_det_ids if det in str(chfilter)]
     else:
         optmap_det_ids = all_det_ids
 
     log.info("creating empty optmaps")
     optmap_count = len(optmap_det_ids) + 1
     optmaps = [
-        OpticalMap("all" if i == 0 else optmap_det_ids[i], settings) for i in range(optmap_count)
+        OpticalMap("all" if i == 0 else optmap_det_ids[i - 1], settings)
+        for i in range(optmap_count)
     ]
 
     return all_det_ids, eff, optmaps, optmap_det_ids
@@ -99,6 +100,7 @@ def create_optical_maps(
     chfilter=(),
     output_lh5_fn=None,
     after_save: Callable[[int, str, OpticalMap]] | None = None,
+    check_after_create: bool = False,
 ) -> None:
     """
     Parameters
@@ -114,6 +116,8 @@ def create_optical_maps(
     all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
         optmap_events, settings, chfilter=chfilter
     )
+
+    log.info("creating optical map groups: %s", ", ".join(["all", *optmap_det_ids]))
 
     hits_per_primary = np.zeros(10, dtype=np.int64)
     hits_per_primary_len = 0
@@ -143,7 +147,8 @@ def create_optical_maps(
     log.info("computing probability and storing to %s", output_lh5_fn)
     for i in range(len(optmaps)):
         optmaps[i].create_probability()
-        optmaps[i].check_histograms()
+        if check_after_create:
+            optmaps[i].check_histograms()
         group = "all" if i == 0 else "_" + optmap_det_ids[i - 1]
         if output_lh5_fn is not None:
             optmaps[i].write_lh5(lh5_file=output_lh5_fn, group=group)
@@ -151,7 +156,7 @@ def create_optical_maps(
         if after_save is not None:
             after_save(i, group, optmaps[i])
 
-        optmaps[i] = None
+        optmaps[i] = None  # clear some memory.
 
     if output_lh5_fn is not None:
         lh5.write(Array(hits_per_primary), "_hitcounts", lh5_file=output_lh5_fn)
@@ -170,6 +175,8 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
             msg = "available optical maps in input files differ"
             raise ValueError(msg)
         all_det_ntuples = det_ntuples
+
+    log.info("merging optical map groups: %s", ", ".join(all_det_ntuples))
 
     def _edges_eq(e1: tuple[NDArray], e2: tuple[NDArray]):
         return len(e1) == len(e2) and all(np.all(x1 == x2) for x1, x2 in zip(e1, e2))

@@ -52,6 +52,15 @@ def optical_cli() -> None:
         help="""Select a config file for binning.""",
         required=True,
     )
+    map_parser.add_argument(
+        "--detectors",
+        help="file that contains a list of detector ids that will be produced as additional output maps.",
+    )
+    map_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="""Check map statistics after creation. default: %(default)s""",
+    )
     map_parser.add_argument("input", help="input evt LH5 file", metavar="INPUT_EVT", nargs="+")
     map_parser.add_argument("output", help="output map LH5 file", metavar="OUTPUT_MAP")
 
@@ -163,12 +172,19 @@ def optical_cli() -> None:
         with Path.open(Path(args.settings)) as settings_f:
             settings = json.load(settings_f)
 
+        chfilter = ()
+        if args.detectors is not None:
+            # load detector ids from a JSON array
+            with Path.open(Path(args.detectors)) as detectors_f:
+                chfilter = json.load(detectors_f)
+
         optmap_events = read_optmap_evt(args.input, args.bufsize)
         create_optical_maps(
             optmap_events,
             settings,
-            chfilter=(),
+            chfilter=chfilter,
             output_lh5_fn=args.output,
+            check_after_create=args.check,
         )
 
     # STEP 2b: view maps
