@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from lgdo import Array, Table, lh5
 
+from reboost.optical.convolve import convolve
 from reboost.optical.create import create_optical_maps, merge_optical_maps
 from reboost.optical.evt import build_optmap_evt, read_optmap_evt
 
@@ -138,3 +139,60 @@ def test_optmap_merge(tbl_evt, tmp_path):
 
     map_merged_fn = str(tmp_path / "map-merged.lh5")
     merge_optical_maps([map1_fn, map2_fn], map_merged_fn, settings)
+
+
+@pytest.fixture
+def tbl_edep(tmp_path):
+    evt_count = 100
+    rng = np.random.default_rng(1234)
+    loc = rng.uniform(size=(evt_count, 6))
+
+    evtids = np.arange(1, evt_count + 1)
+
+    tbl_evt = Table(
+        {
+            "evtid": Array(evtids),
+            "particle": Array(22 * np.ones(evt_count, dtype=np.int64)),
+            "edep": Array(rng.normal(loc=200, scale=2, size=evt_count)),
+            "xloc_pre": Array(loc[:, 0]),
+            "yloc_pre": Array(loc[:, 1]),
+            "zloc_pre": Array(loc[:, 2]),
+            "xloc_post": Array(loc[:, 3]),
+            "yloc_post": Array(loc[:, 4]),
+            "zloc_post": Array(loc[:, 5]),
+            "time": Array(np.ones(evt_count)),
+            "v_pre": Array(60 * np.ones(evt_count)),
+            "v_post": Array(58 * np.ones(evt_count)),
+        }
+    )
+
+    evt_file = tmp_path / "edep.lh5"
+    lh5.write(tbl_evt, name="/hit/x", lh5_file=evt_file, wo_mode="overwrite_file")
+    return evt_file
+
+
+@pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
+def test_optmap_convolve(tbl_evt, tbl_edep, tmp_path):
+    settings = {
+        "range_in_m": [[0, 1], [0, 1], [0, 1]],
+        "bins": [2, 2, 2],
+    }
+
+    map_fn = str(tmp_path / "map.lh5")
+    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
+    create_optical_maps(
+        evt_it,
+        settings,
+        chfilter=("001"),
+        output_lh5_fn=map_fn,
+    )
+
+    out_fn = str(tmp_path / "convolved.lh5")
+    convolve(
+        map_fn,
+        str(tbl_edep),
+        "/hit/x",
+        material="lar",
+        output_file=out_fn,
+        buffer_len=10,
+    )
