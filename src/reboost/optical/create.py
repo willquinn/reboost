@@ -221,7 +221,7 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
             merged_nr_gen += nr_gen.weights.nda
 
         merged_map.create_probability()
-        merged_map.check_histograms()
+        merged_map.check_histograms(include_prefix=(len(all_det_ntuples) > 1))
         merged_map.write_lh5(lh5_file=output_lh5_fn, group=d)
 
     # merge hitcounts.
@@ -239,3 +239,9 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
     # re-calculate hitcounts exponent.
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
     lh5.write(Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn)
+
+
+def check_optical_map(map_l5_file: str):
+    for submap in list_optical_maps(map_l5_file):
+        # TODO: check submaps consistency
+        OpticalMap.load_from_file(map_l5_file, submap).check_histograms(include_prefix=True)

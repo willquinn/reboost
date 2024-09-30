@@ -124,7 +124,12 @@ class OpticalMap:
         write_hist(self.h_prob, "p_det", lh5_file, group=group)
         write_hist(self.h_prob_uncert, "p_det_err", lh5_file, group=group)
 
-    def check_histograms(self) -> None:
+    def check_histograms(self, include_prefix: bool = False) -> None:
+        log_prefix = "" if not include_prefix else self.name + " - "
+
+        def _warn(fmt: str, *args):
+            log.warning("%s" + fmt, log_prefix, *args)  # noqa: G003
+
         h_vertex = self.h_vertex.view()
         h_prob = self.h_prob.view()
         h_prob_uncert = self.h_prob_uncert.view()
@@ -133,15 +138,15 @@ class OpticalMap:
 
         missing_v = np.sum(h_vertex <= 0)  # bins without vertices.
         if missing_v > 0:
-            log.warning("%d missing_v %.2f %%", missing_v, missing_v / ncells * 100)
+            _warn("%d missing_v %.2f %%", missing_v, missing_v / ncells * 100)
 
         missing_p = np.sum(h_prob <= 0)  # bins without hist.
         if missing_p > 0:
-            log.warning("%d missing_p %.2f %%", missing_p, missing_p / ncells * 100)
+            _warn("%d missing_p %.2f %%", missing_p, missing_p / ncells * 100)
 
         non_phys = np.sum(h_prob > 1)  # non-physical events with probability > 1.
         if non_phys > 0:
-            log.warning(
+            _warn(
                 "%d voxels (%.2f %%) with non-physical probability (p>1)",
                 non_phys,
                 non_phys / ncells * 100,
@@ -150,7 +155,7 @@ class OpticalMap:
         # warnings on insufficient statistics.
         large_error = np.sum(h_prob_uncert > 0.01 * h_prob)
         if large_error > 0:
-            log.warning(
+            _warn(
                 "%d voxels (%.2f %%) with large relative statistical uncertainty (> 1 %%)",
                 large_error,
                 large_error / ncells * 100,
@@ -159,7 +164,7 @@ class OpticalMap:
         primaries_low_stats_th = 100
         low_stat_zero = np.sum((h_vertex < primaries_low_stats_th) & (h_prob == 0))
         if low_stat_zero > 0:
-            log.warning(
+            _warn(
                 "%d voxels (%.2f %%) with non reliable probability estimate (p=0 and primaries < %d)",
                 low_stat_zero,
                 low_stat_zero / ncells * 100,
@@ -167,7 +172,7 @@ class OpticalMap:
             )
         low_stat_one = np.sum((h_vertex < primaries_low_stats_th) & (h_prob == 1))
         if low_stat_one > 0:
-            log.warning(
+            _warn(
                 "%d voxels (%.2f %%) with non reliable probability estimate (p=1 and primaries < %d)",
                 low_stat_one,
                 low_stat_one / ncells * 100,

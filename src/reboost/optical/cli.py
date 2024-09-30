@@ -100,6 +100,10 @@ def optical_cli() -> None:
         required=True,
     )
 
+    # STEP 2d: check map
+    checkmap_parser = subparsers.add_parser("checkmap", help="check optical maps")
+    checkmap_parser.add_argument("input", help="input map LH5 file", metavar="INPUT_MAP")
+
     # STEP 3: convolve with hits from non-optical simulations
     convolve_parser = subparsers.add_parser(
         "convolve", help="convolve non-optical hits with optical map"
@@ -208,6 +212,13 @@ def optical_cli() -> None:
         _check_input_file(parser, args.input)
         _check_output_file(parser, args.output)
         merge_optical_maps(args.input, args.output, settings)
+
+    # STEP 2d: check maps
+    if args.command == "checkmap":
+        from reboost.optical.create import check_optical_map
+
+        _check_input_file(parser, args.input)
+        check_optical_map(args.input)
 
     # STEP 3: convolve with hits from non-optical simulations
     if args.command == "convolve":
