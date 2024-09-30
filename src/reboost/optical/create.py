@@ -30,7 +30,8 @@ def _optmaps_for_channels(
     eff = np.array([get_channel_efficiency(int(ch_id), settings) for ch_id in all_det_ids])
 
     if chfilter != "*":
-        optmap_det_ids = [det for det in all_det_ids if det in str(chfilter)]
+        chfilter = [str(ch) for ch in chfilter]  # normalize types
+        optmap_det_ids = [det for det in all_det_ids if str(det) in chfilter]
     else:
         optmap_det_ids = all_det_ids
 
@@ -45,7 +46,7 @@ def _optmaps_for_channels(
 
 
 @njit(cache=True)
-def _compute_hit_maps(hitcounts, eff, rng, optmap_count):
+def _compute_hit_maps(hitcounts, eff, rng, optmap_count, ch_idx_to_optmap):
     mask = np.zeros((hitcounts.shape[0], optmap_count), dtype=np.bool_)
     counts = hitcounts.sum(axis=1)
     for idx in range(hitcounts.shape[0]):
@@ -56,12 +57,16 @@ def _compute_hit_maps(hitcounts, eff, rng, optmap_count):
             c = rng.binomial(hitcounts[idx, ch_idx], eff[ch_idx])
             if c > 0:  # detected
                 mask[idx, 0] = True
-                mask[idx, ch_idx + 1] = True
+                mask_idx = ch_idx_to_optmap[ch_idx]
+                if mask_idx > 0:
+                    mask[idx, mask_idx] = True
     return mask
 
 
-def _fill_hit_maps(optmaps: list[OpticalMap], loc, hitcounts: NDArray, eff: NDArray, rng):
-    masks = _compute_hit_maps(hitcounts, eff, rng, len(optmaps))
+def _fill_hit_maps(
+    optmaps: list[OpticalMap], loc, hitcounts: NDArray, eff: NDArray, ch_idx_to_map_idx, rng
+):
+    masks = _compute_hit_maps(hitcounts, eff, rng, len(optmaps), ch_idx_to_map_idx)
 
     for i in range(len(optmaps)):
         locm = loc[masks[:, i]]
@@ -111,10 +116,16 @@ def create_optical_maps(
         tuple of detector ids that will be included in the resulting optmap. Those have to match
         the column names in ``optmap_events_it``.
     """
-    optmap_events = optmap_events_it.read(0)[0].view_as("pd")
+    optmap_events = optmap_events_it.read(0)[0].view_as("pd")  # peek into the file.
     all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
         optmap_events, settings, chfilter=chfilter
     )
+
+    # indices for later use in _compute_hit_maps.
+    ch_idx_to_map_idx = np.array(
+        [optmap_det_ids.index(d) + 1 if d in optmap_det_ids else -1 for d in all_det_ids]
+    )
+    assert np.sum(ch_idx_to_map_idx > 0) == len(optmaps) - 1
 
     log.info("creating optical map groups: %s", ", ".join(["all", *optmap_det_ids]))
 
@@ -131,7 +142,7 @@ def create_optical_maps(
         optmaps[0].fill_vertex(loc)
 
         log.info("computing map (%d)", it_count)
-        _fill_hit_maps(optmaps, loc, hitcounts, eff, rng)
+        _fill_hit_maps(optmaps, loc, hitcounts, eff, ch_idx_to_map_idx, rng)
         hpp = _count_multi_ph_detection(hitcounts)
         hits_per_primary_len = max(hits_per_primary_len, len(hpp))
         hits_per_primary[0 : len(hpp)] += hpp
@@ -225,6 +236,6 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
     hits_per_primary = hits_per_primary[0:hits_per_primary_len]
     lh5.write(Array(hits_per_primary), "_hitcounts", lh5_file=output_lh5_fn)
 
-    # re-calculate hotcounts exponent.
+    # re-calculate hitcounts exponent.
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
     lh5.write(Scalar(hits_per_primary_exponent), "_hitcounts_exp", lh5_file=output_lh5_fn)
