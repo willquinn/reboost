@@ -179,7 +179,7 @@ def _iterate_stepwise_depositions(
                 continue  # out-of-bounds of optmap
             ib += 1
 
-            px_any = optmap_weights[OPTMAP_ANY_CH, *cur_bins]
+            px_any = optmap_weights[OPTMAP_ANY_CH, cur_bins[0], cur_bins[1], cur_bins[2]]
             if px_any == 0.0:
                 continue
             if rng.uniform() >= px_any:
@@ -189,11 +189,11 @@ def _iterate_stepwise_depositions(
 
             detsel_size = rng.geometric(1 - np.exp(-optmap_multi_det_exp))
 
-            px_sum = optmap_weights[OPTMAP_SUM_CH, *cur_bins]
+            px_sum = optmap_weights[OPTMAP_SUM_CH, cur_bins[0], cur_bins[1], cur_bins[2]]
             detp = np.empty(detidx.shape, dtype=np.float64)
             for d in detidx:
                 # normalize so that sum(detp) = 1
-                detp[d] = optmap_weights[d, *cur_bins] / px_sum
+                detp[d] = optmap_weights[d, cur_bins[0], cur_bins[1], cur_bins[2]] / px_sum
 
             # should be equivalent to rng.choice(detidx, size=(detsel_size, p=detp)
             detsel = detidx[
