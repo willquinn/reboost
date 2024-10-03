@@ -83,7 +83,9 @@ def iterate_stepwise_depositions(
     )
     if res["oob"] > 0:
         log.warning(
-            "had edep out of map bounds: %d (%.2f%%)", res["oob"], (res["oob"] / res["ib"]) * 100
+            "had edep out of map bounds: %d (%.2f%%)",
+            res["oob"],
+            (res["oob"] / (res["ib"] + res["oob"])) * 100,
         )
     log.debug(
         "VUV_primary %d ->hits_any %d ->hits %d (%.2f %% primaries detected)",
@@ -230,6 +232,7 @@ def get_output_table(output_map):
     ph_count_o = 0
     for _rawid, (_evtid, det, _times) in output_map.items():
         ph_count_o += det.shape[0]
+
     out_idx = 0
     out_evtid = np.empty(ph_count_o, dtype=np.int64)
     out_det = np.empty(ph_count_o, dtype=np.int64)
@@ -241,7 +244,7 @@ def get_output_table(output_map):
         out_times[out_idx : out_idx + o_len] = times
         out_idx += o_len
 
-    tbl = Table({"evtid": Array(out_evtid), "detid": Array(out_det), "time": Array(out_times)})
+    tbl = Table({"evtid": Array(out_evtid), "det_uid": Array(out_det), "time": Array(out_times)})
     return ph_count_o, tbl
 
 
