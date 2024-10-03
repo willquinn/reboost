@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from lgdo.lh5 import LH5Store
 from matplotlib import colors
+from numpy.typing import NDArray
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _slice_text(viewdata: dict) -> str:
     return f"{viewdata['detid']} | slice {axis_name} = {axis_pos:.2f} m"
 
 
-def _process_key(event):
+def _process_key(event) -> None:
     fig = event.canvas.figure
     viewdata = fig.__reboost
 
@@ -44,10 +45,16 @@ def _process_key(event):
     elif event.key == "left":
         viewdata["idx"] -= 1
 
-    w, extent, labels = _get_weights(viewdata)
-    viewdata["idx"] = max(min(viewdata["idx"], w.shape[0] - 1), 0)
+    max_idx = viewdata["weights"].shape[viewdata["axis"]] - 1
+    viewdata["idx"] = max(min(viewdata["idx"], max_idx), 0)
 
-    # update figure
+    _update_figure(fig)
+
+
+def _update_figure(fig) -> None:
+    viewdata = fig.__reboost
+    w, extent, labels = _get_weights(viewdata)
+
     ax = fig.axes[0]
     ax.texts[0].set_text(_slice_text(viewdata))
     ax.images[0].set_array(w[viewdata["idx"]])
@@ -57,14 +64,12 @@ def _process_key(event):
     fig.canvas.draw()
 
 
-def view_optmap(
+def _prepare_data(
     optmap_fn: str,
     detid: str = "all",
-    start_axis: int = 2,
-    cmap_min: float = 1e-3,
+    cmap_min: float = 1e-4,
     cmap_max: float = 1e-2,
-    title: str | None = None,
-) -> None:
+) -> tuple[tuple[NDArray], NDArray]:
     store = LH5Store(keep_open=True)
 
     optmap_all = store.read(f"/{detid}/p_det", optmap_fn)[0]
@@ -90,6 +95,19 @@ def view_optmap(
     # style those cells using the `under` style and, can style `bad` (i.e. everything < 0
     # after this re-assignment) in a different way.
     optmap_weights[(optmap_weights >= 0) & (optmap_weights < 1e-50)] = min(1e-10, cmap_min)
+
+    return optmap_edges, optmap_weights
+
+
+def view_optmap(
+    optmap_fn: str,
+    detid: str = "all",
+    start_axis: int = 2,
+    cmap_min: float = 1e-4,
+    cmap_max: float = 1e-2,
+    title: str | None = None,
+) -> None:
+    optmap_edges, optmap_weights = _prepare_data(optmap_fn, detid, cmap_min, cmap_max)
 
     fig = plt.figure()
     fig.canvas.mpl_connect("key_press_event", _process_key)

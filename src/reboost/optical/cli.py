@@ -75,7 +75,7 @@ def optical_cli() -> None:
     )
     mapview_parser.add_argument(
         "--min",
-        default=1e-3,
+        default=1e-4,
         type=float,
         help="colormap min value. default: %(default)e",
     )
