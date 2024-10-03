@@ -211,17 +211,24 @@ def _iterate_stepwise_depositions(
             out_det = np.empty(out_hits_len, dtype=np.int64)
             out_idx = 0
             for d in detidx:
-                tx_max_plane = np.max(hitcount[d, :])
-                # untangle the hitcount array in "planes" that only contain the given number of hits per channel.
-                for hc_d_plane_cnt in range(1, tx_max_plane + 1):
-                    hc_d_plane = hitcount[d, :] == hc_d_plane_cnt
+                hc_d_plane_max = np.max(hitcount[d, :])
+                # untangle the hitcount array in "planes" that only contain the given number of hits per
+                # channel. example: assume a "histogram" of hits per channel:
+                #     x |   |    <-- this is plane 2 with 1 hit ("max plane")
+                #     x |   | x  <-- this is plane 1 with 2 hits
+                # ch: 1 | 2 | 3
+                for hc_d_plane_cnt in range(1, hc_d_plane_max + 1):
+                    hc_d_plane = hitcount[d, :] >= hc_d_plane_cnt
                     hc_d_plane_len = np.sum(hc_d_plane)
                     if hc_d_plane_len == 0:
                         continue
 
+                    # note: we assume "immediate" propagation after scintillation. Here, a single timestamp
+                    # might be coipied to output/"detected" twice.
                     out_times[out_idx : out_idx + hc_d_plane_len] = scint_times[hc_d_plane, 0]
                     out_det[out_idx : out_idx + hc_d_plane_len] = detids[d]
                     out_idx += hc_d_plane_len
+            assert out_idx == out_hits_len  # ensure that all of out_{det,times} is filled.
             output_map[np.int64(rowid)] = (t.evtid, out_det, out_times)
 
     stats = {"oob": oob, "ib": ib, "vuv_primary": ph_cnt, "hits_any": ph_det, "hits": ph_det2}
