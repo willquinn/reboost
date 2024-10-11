@@ -7,8 +7,8 @@ import numpy as np
 import pint
 from legendoptics import lar
 from lgdo import lh5
-from lgdo.lh5 import LH5Iterator, LH5Store
-from lgdo.types import Array, Table
+from lgdo.lh5 import LH5Iterator
+from lgdo.types import Array, Histogram, Table
 from numba import njit, prange
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -22,48 +22,46 @@ OPTMAP_SUM_CH = -2
 
 
 def open_optmap(optmap_fn: str):
-    store = LH5Store(keep_open=True)
-
     maps = lh5.ls(optmap_fn)
     det_ntuples = [m for m in maps if m not in ("all", "_hitcounts", "_hitcounts_exp")]
     detids = np.array([int(m.lstrip("_")) for m in det_ntuples])
     detidx = np.arange(0, detids.shape[0])
 
-    optmap_all = store.read("/all/p_det", optmap_fn)[0]
+    optmap_all = lh5.read("/all/p_det", optmap_fn)
+    assert isinstance(optmap_all, Histogram)
     optmap_edges = tuple([b.edges for b in optmap_all.binning])
 
-    optmap_weights = np.empty(
-        (detidx.shape[0] + 2, *optmap_all.weights.nda.shape), dtype=np.float64
-    )
-    # normalize all negative components to 0.
-    # TODO: somehow get statistics on missing voxels that would have been needed
-    optmap_weights[OPTMAP_ANY_CH] = optmap_all.weights.nda
-    optmap_weights[OPTMAP_ANY_CH][optmap_weights[OPTMAP_ANY_CH] < 0] = 0
+    ow = np.empty((detidx.shape[0] + 2, *optmap_all.weights.nda.shape), dtype=np.float64)
+    # 0, ..., len(detidx)-1 AND OPTMAP_ANY_CH might be negative.
+    ow[OPTMAP_ANY_CH] = optmap_all.weights.nda
     for i, nt in zip(detidx, det_ntuples):
-        optmap = store.read(f"/{nt}/p_det", optmap_fn)[0]
-        optmap_weights[i] = optmap.weights.nda
-        optmap_weights[i][optmap_weights[i] < 0] = 0
+        optmap = lh5.read(f"/{nt}/p_det", optmap_fn)
+        assert isinstance(optmap, Histogram)
+        ow[i] = optmap.weights.nda
 
     # if we have any individual channels registered, the sum is potentially larger than the
     # probability to find _any_ hit.
     if len(detidx) != 0:
-        optmap_weights[OPTMAP_SUM_CH] = np.sum(optmap_weights[0:-2], axis=0)
-        optmap_weights[OPTMAP_SUM_CH][optmap_weights[-2] < 0] = 0
+        ow[OPTMAP_SUM_CH] = np.sum(ow[0:-2], axis=0, where=(ow[0:-2] >= 0))
+        assert not np.any(ow[OPTMAP_SUM_CH] < 0)
     else:
         detidx = np.array([OPTMAP_ANY_CH])
         detids = np.array([0])
-        optmap_weights[OPTMAP_SUM_CH] = optmap_weights[OPTMAP_ANY_CH]
+        ow[OPTMAP_SUM_CH] = ow[OPTMAP_ANY_CH]
 
     # give this check some numerical slack.
-    if np.any(optmap_weights[-2] - optmap_weights[-1] < -1e-15):
+    if np.any(
+        ow[OPTMAP_SUM_CH][ow[OPTMAP_ANY_CH] >= 0] - ow[OPTMAP_ANY_CH][ow[OPTMAP_ANY_CH] >= 0]
+        < -1e-15
+    ):
         msg = "optical map does not fulfill relation sum(p_i) >= p_any"
         raise ValueError(msg)
 
     # get the exponent from the optical map file
-    optmap_multi_det_exp = store.read("/_hitcounts_exp", optmap_fn)[0].value
+    optmap_multi_det_exp = lh5.read("/_hitcounts_exp", optmap_fn).value
     assert isinstance(optmap_multi_det_exp, float)
 
-    return detids, detidx, optmap_edges, optmap_weights, optmap_multi_det_exp
+    return detids, detidx, optmap_edges, ow, optmap_multi_det_exp
 
 
 def iterate_stepwise_depositions(
@@ -81,6 +79,12 @@ def iterate_stepwise_depositions(
     output_map, res = _iterate_stepwise_depositions(
         edep_df, x0, x1, rng, *optmap_for_convolve, scint_mat_params
     )
+    if res["any_no_stats"] > 0 or res["det_no_stats"] > 0:
+        log.warning(
+            "had edep out in voxels without stats: %d (%.2f%%)",
+            res["any_no_stats"],
+            res["det_no_stats"],
+        )
     if res["oob"] > 0:
         log.warning(
             "had edep out of map bounds: %d (%.2f%%)",
@@ -133,7 +137,7 @@ def _iterate_stepwise_depositions(
 ):
     pdgid_map = {}
     output_map = {}
-    oob = ib = ph_cnt = ph_det = ph_det2 = 0  # for statistics
+    oob = ib = ph_cnt = ph_det = ph_det2 = any_no_stats = det_no_stats = 0  # for statistics
     for rowid in prange(edep_df.shape[0]):
         # if rowid % 100000 == 0:
         #     print(rowid)
@@ -182,6 +186,9 @@ def _iterate_stepwise_depositions(
             ib += 1
 
             px_any = optmap_weights[OPTMAP_ANY_CH, cur_bins[0], cur_bins[1], cur_bins[2]]
+            if px_any < 0.0:
+                any_no_stats += 1
+                continue
             if px_any == 0.0:
                 continue
             if rng.uniform() >= px_any:
@@ -192,10 +199,16 @@ def _iterate_stepwise_depositions(
             detsel_size = rng.geometric(1 - np.exp(-optmap_multi_det_exp))
 
             px_sum = optmap_weights[OPTMAP_SUM_CH, cur_bins[0], cur_bins[1], cur_bins[2]]
+            assert px_sum >= 0.0  # should not be negative.
             detp = np.empty(detidx.shape, dtype=np.float64)
+            had_det_no_stats = 0
             for d in detidx:
                 # normalize so that sum(detp) = 1
                 detp[d] = optmap_weights[d, cur_bins[0], cur_bins[1], cur_bins[2]] / px_sum
+                if detp[d] < 0.0:
+                    had_det_no_stats = 1
+                    detp[d] = 0.0
+            det_no_stats += had_det_no_stats
 
             # should be equivalent to rng.choice(detidx, size=(detsel_size, p=detp)
             detsel = detidx[
@@ -231,7 +244,15 @@ def _iterate_stepwise_depositions(
             assert out_idx == out_hits_len  # ensure that all of out_{det,times} is filled.
             output_map[np.int64(rowid)] = (t.evtid, out_det, out_times)
 
-    stats = {"oob": oob, "ib": ib, "vuv_primary": ph_cnt, "hits_any": ph_det, "hits": ph_det2}
+    stats = {
+        "oob": oob,
+        "ib": ib,
+        "vuv_primary": ph_cnt,
+        "hits_any": ph_det,
+        "hits": ph_det2,
+        "any_no_stats": any_no_stats,
+        "det_no_stats": det_no_stats,
+    }
     return output_map, stats
 
 
