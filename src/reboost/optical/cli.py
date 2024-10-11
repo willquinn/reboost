@@ -74,6 +74,11 @@ def optical_cli() -> None:
         help="default: %(default)s",
     )
     mapview_parser.add_argument(
+        "--display-error",
+        action="store_true",
+        help="display error instead of magnitude. default: %(default)s",
+    )
+    mapview_parser.add_argument(
         "--min",
         default=1e-4,
         type=float,
@@ -197,7 +202,12 @@ def optical_cli() -> None:
 
         _check_input_file(parser, args.input)
         view_optmap(
-            args.input, args.channel, cmap_min=args.min, cmap_max=args.max, title=args.title
+            args.input,
+            args.channel,
+            cmap_min=args.min,
+            cmap_max=args.max,
+            title=args.title,
+            show_error=args.display_error,
         )
 
     # STEP 2c: merge maps

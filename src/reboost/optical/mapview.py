@@ -5,7 +5,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from lgdo.lh5 import LH5Store
+from lgdo import lh5
 from matplotlib import colors
 from numpy.typing import NDArray
 
@@ -69,12 +69,16 @@ def _prepare_data(
     detid: str = "all",
     cmap_min: float = 1e-4,
     cmap_max: float = 1e-2,
+    show_error: bool = False,
 ) -> tuple[tuple[NDArray], NDArray]:
-    store = LH5Store(keep_open=True)
-
-    optmap_all = store.read(f"/{detid}/p_det", optmap_fn)[0]
+    optmap_all = lh5.read(f"/{detid}/p_det", optmap_fn)
     optmap_edges = tuple([b.edges for b in optmap_all.binning])
     optmap_weights = optmap_all.weights.nda.copy()
+    if show_error:
+        optmap_err = lh5.read(f"/{detid}/p_det_err", optmap_fn)
+        optmap_weights[optmap_weights > 0] = (
+            optmap_err.weights.nda[optmap_weights > 0] / optmap_weights[optmap_weights > 0]
+        )
 
     lower_count = np.sum((optmap_weights > 0) & (optmap_weights < cmap_min))
     if lower_count > 0:
@@ -105,9 +109,10 @@ def view_optmap(
     start_axis: int = 2,
     cmap_min: float = 1e-4,
     cmap_max: float = 1e-2,
+    show_error: bool = False,
     title: str | None = None,
 ) -> None:
-    optmap_edges, optmap_weights = _prepare_data(optmap_fn, detid, cmap_min, cmap_max)
+    optmap_edges, optmap_weights = _prepare_data(optmap_fn, detid, cmap_min, cmap_max, show_error)
 
     fig = plt.figure()
     fig.canvas.mpl_connect("key_press_event", _process_key)
