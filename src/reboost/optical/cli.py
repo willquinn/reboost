@@ -79,6 +79,11 @@ def optical_cli() -> None:
         help="display error instead of magnitude. default: %(default)s",
     )
     mapview_parser.add_argument(
+        "--divide",
+        action="store",
+        help="default: none",
+    )
+    mapview_parser.add_argument(
         "--min",
         default=1e-4,
         type=float,
@@ -201,9 +206,12 @@ def optical_cli() -> None:
         from reboost.optical.mapview import view_optmap
 
         _check_input_file(parser, args.input)
+        if args.divide is not None:
+            _check_input_file(parser, args.divide)
         view_optmap(
             args.input,
             args.channel,
+            args.divide,
             cmap_min=args.min,
             cmap_max=args.max,
             title=args.title,

@@ -64,11 +64,9 @@ def _update_figure(fig) -> None:
     fig.canvas.draw()
 
 
-def _prepare_data(
+def _read_data(
     optmap_fn: str,
     detid: str = "all",
-    cmap_min: float = 1e-4,
-    cmap_max: float = 1e-2,
     show_error: bool = False,
 ) -> tuple[tuple[NDArray], NDArray]:
     optmap_all = lh5.read(f"/{detid}/p_det", optmap_fn)
@@ -76,9 +74,28 @@ def _prepare_data(
     optmap_weights = optmap_all.weights.nda.copy()
     if show_error:
         optmap_err = lh5.read(f"/{detid}/p_det_err", optmap_fn)
-        optmap_weights[optmap_weights > 0] = (
-            optmap_err.weights.nda[optmap_weights > 0] / optmap_weights[optmap_weights > 0]
-        )
+        divmask = optmap_weights > 0
+        optmap_weights[divmask] = optmap_err.weights.nda[divmask] / optmap_weights[divmask]
+        optmap_weights[~divmask] = -1
+
+    return optmap_edges, optmap_weights
+
+
+def _prepare_data(
+    optmap_fn: str,
+    detid: str = "all",
+    divide_fn: str | None = None,
+    cmap_min: float = 1e-4,
+    cmap_max: float = 1e-2,
+    show_error: bool = False,
+) -> tuple[tuple[NDArray], NDArray]:
+    optmap_edges, optmap_weights = _read_data(optmap_fn, detid, show_error)
+
+    if divide_fn is not None:
+        divide_edges, divide_map = _read_data(divide_fn, detid, show_error)
+        divmask = divide_map > 0
+        optmap_weights[divmask] = optmap_weights[divmask] / divide_map[divmask]
+        optmap_weights[~divmask] = -1
 
     lower_count = np.sum((optmap_weights > 0) & (optmap_weights < cmap_min))
     if lower_count > 0:
@@ -104,24 +121,27 @@ def _prepare_data(
 
 
 def view_optmap(
-    optmap_fn: str,
+    optmap_fn: list[str],
     detid: str = "all",
+    divide_fn: str | None = None,
     start_axis: int = 2,
     cmap_min: float = 1e-4,
     cmap_max: float = 1e-2,
     show_error: bool = False,
     title: str | None = None,
 ) -> None:
-    optmap_edges, optmap_weights = _prepare_data(optmap_fn, detid, cmap_min, cmap_max, show_error)
+    edges, weights = _prepare_data(
+        optmap_fn, detid, divide_fn, cmap_min, cmap_max, show_error
+    )
 
     fig = plt.figure()
     fig.canvas.mpl_connect("key_press_event", _process_key)
-    start_axis_len = optmap_edges[start_axis].shape[0] - 1
+    start_axis_len = edges[start_axis].shape[0] - 1
     fig.__reboost = {
         "axis": start_axis,
-        "weights": optmap_weights,
+        "weights": weights,
         "detid": detid,
-        "edges": optmap_edges,
+        "edges": edges,
         "idx": min(int(start_axis_len / 2), start_axis_len - 1),
     }
 
@@ -136,7 +156,12 @@ def view_optmap(
         extent=extent,
     )
 
-    plt.suptitle(Path(optmap_fn).stem if title is None else title)
+    if title is None:
+        title = Path(optmap_fn).stem
+        if divide_fn is not None:
+            title += " / " + Path(divide_fn).stem
+
+    plt.suptitle(title)
 
     plt.xlabel(labels[0])
     plt.ylabel(labels[1])
