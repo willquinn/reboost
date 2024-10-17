@@ -196,7 +196,9 @@ def _iterate_stepwise_depositions(
             ph_det += 1
             # we detect this energy deposition; we should at least get one photon out here!
 
-            detsel_size = rng.geometric(1 - np.exp(-optmap_multi_det_exp))
+            detsel_size = 1
+            if np.isfinite(optmap_multi_det_exp):
+                detsel_size = rng.geometric(1 - np.exp(-optmap_multi_det_exp))
 
             px_sum = optmap_weights[OPTMAP_SUM_CH, cur_bins[0], cur_bins[1], cur_bins[2]]
             assert px_sum >= 0.0  # should not be negative.

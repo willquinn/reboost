@@ -80,6 +80,9 @@ def _count_multi_ph_detection(hitcounts) -> NDArray:
 
 
 def _fit_multi_ph_detection(hits_per_primary) -> float:
+    if len(hits_per_primary) <= 2:  # have only 0 and 1 hits, can't fit (and also don't need to).
+        return np.inf
+
     x = np.arange(0, len(hits_per_primary))
     popt, pcov = scipy.optimize.curve_fit(
         lambda x, p0, k: p0 * np.exp(-k * x), x[1:], hits_per_primary[1:]
