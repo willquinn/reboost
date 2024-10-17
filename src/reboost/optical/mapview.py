@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -85,8 +86,8 @@ def _prepare_data(
     optmap_fn: str,
     detid: str = "all",
     divide_fn: str | None = None,
-    cmap_min: float = 1e-4,
-    cmap_max: float = 1e-2,
+    cmap_min: float | Literal["auto"] = 1e-4,
+    cmap_max: float | Literal["auto"] = 1e-2,
     show_error: bool = False,
 ) -> tuple[tuple[NDArray], NDArray]:
     optmap_edges, optmap_weights = _read_data(optmap_fn, detid, show_error)
@@ -96,6 +97,11 @@ def _prepare_data(
         divmask = divide_map > 0
         optmap_weights[divmask] = optmap_weights[divmask] / divide_map[divmask]
         optmap_weights[~divmask] = -1
+
+    if cmap_min == "auto":
+        cmap_min = max(1e-10, optmap_weights[optmap_weights > 0].min())
+    if cmap_max == "auto":
+        cmap_max = optmap_weights.max()
 
     lower_count = np.sum((optmap_weights > 0) & (optmap_weights < cmap_min))
     if lower_count > 0:
@@ -117,7 +123,7 @@ def _prepare_data(
     # after this re-assignment) in a different way.
     optmap_weights[(optmap_weights >= 0) & (optmap_weights < 1e-50)] = min(1e-10, cmap_min)
 
-    return optmap_edges, optmap_weights
+    return optmap_edges, optmap_weights, cmap_min, cmap_max
 
 
 def view_optmap(
@@ -125,12 +131,12 @@ def view_optmap(
     detid: str = "all",
     divide_fn: str | None = None,
     start_axis: int = 2,
-    cmap_min: float = 1e-4,
-    cmap_max: float = 1e-2,
+    cmap_min: float | Literal["auto"] = 1e-4,
+    cmap_max: float | Literal["auto"] = 1e-2,
     show_error: bool = False,
     title: str | None = None,
 ) -> None:
-    edges, weights = _prepare_data(
+    edges, weights, cmap_min, cmap_max = _prepare_data(
         optmap_fn, detid, divide_fn, cmap_min, cmap_max, show_error
     )
 

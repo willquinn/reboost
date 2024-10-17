@@ -86,13 +86,13 @@ def optical_cli() -> None:
     mapview_parser.add_argument(
         "--min",
         default=1e-4,
-        type=float,
+        type=(lambda s: s if s == "auto" else float(s)),
         help="colormap min value. default: %(default)e",
     )
     mapview_parser.add_argument(
         "--max",
         default=1e-2,
-        type=float,
+        type=(lambda s: s if s == "auto" else float(s)),
         help="colormap max value. default: %(default)e",
     )
     mapview_parser.add_argument("--title", help="title of figure. default: stem of filename")
