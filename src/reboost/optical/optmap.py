@@ -101,7 +101,7 @@ class OpticalMap:
         ratio[h2 == 0] = -1  # -1 denotes no statistics.
 
         if np.any(ratio > 1):
-            msg = "encountered cell(s) with more hits then primaries"
+            msg = "encountered cell(s) with more hits than primaries"
             raise RuntimeError(msg)
 
         # compute uncertainty according to Bernoulli statistics.
@@ -135,9 +135,9 @@ class OpticalMap:
         def _warn(fmt: str, *args):
             log.warning("%s" + fmt, log_prefix, *args)  # noqa: G003
 
-        h_vertex = self.h_vertex.view()
-        h_prob = self.h_prob.view()
-        h_prob_uncert = self.h_prob_uncert.view()
+        h_vertex = self.h_vertex
+        h_prob = self.h_prob
+        h_prob_uncert = self.h_prob_uncert
 
         ncells = h_vertex.shape[0] * h_vertex.shape[1] * h_vertex.shape[2]
 
