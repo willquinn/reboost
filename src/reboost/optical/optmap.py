@@ -3,11 +3,29 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
-import hist
 import numpy as np
 from lgdo import Histogram, lh5
+from numpy.typing import NDArray
 
 log = logging.getLogger(__name__)
+
+
+def _fill_histogram(h: NDArray, binning: NDArray, xyz: NDArray) -> None:
+    assert xyz.shape[1] == 3
+    xyz = xyz.T
+
+    idx = np.zeros(xyz.shape[1], np.float64)  # bin indices for flattened array
+    oor_mask = np.ones(xyz.shape[1], np.bool_)  # mask to remove out of range values
+    stride = [s // h.dtype.itemsize for s in h.strides]
+    for col, ax, s in zip(xyz, binning, stride):
+        assert ax.is_range
+        assert ax.closedleft
+        idx += s * np.floor((col - ax.first) / ax.step - int(not ax.closedleft))
+        oor_mask &= (ax.first <= col) & (col < ax.last)
+
+    # increment bin contents
+    idx = idx[oor_mask].astype(np.int64)
+    np.add.at(h.reshape(-1), idx, 1)
 
 
 class OpticalMap:
@@ -19,6 +37,23 @@ class OpticalMap:
         self.h_prob = None
         self.h_prob_uncert = None
         self.name = name
+        self.binning = None
+
+        if settings is not None:
+            binedge_attrs = {"units": "m"}
+            bins = self.settings["bins"]
+            bounds = self.settings["range_in_m"]
+            self.binning = [
+                Histogram.Axis(
+                    None,
+                    bounds[i][0],
+                    bounds[i][1],
+                    (bounds[i][1] - bounds[i][0]) / bins[i],
+                    True,
+                    binedge_attrs,
+                )
+                for i in range(3)
+            ]
 
     def create_empty(name: str, settings: Mapping[str, str]) -> OpticalMap:
         om = OpticalMap(name, settings)
@@ -35,62 +70,32 @@ class OpticalMap:
             if not isinstance(h, Histogram):
                 msg = f"encountered invalid optical map while reading /{group}/{name} in {fn}"
                 raise ValueError(msg)
-            return h.view_as("hist")
+            return h.weights.nda, h.binning
 
-        om.h_vertex = read_hist("nr_gen", lh5_file, group=group)
-        om.h_hits = read_hist("nr_det", lh5_file, group=group)
-        om.h_prob = read_hist("p_det", lh5_file, group=group)
-        om.h_prob_uncert = read_hist("p_det_err", lh5_file, group=group)
+        om.h_vertex, om.binning = read_hist("nr_gen", lh5_file, group=group)
+        om.h_hits, _ = read_hist("nr_det", lh5_file, group=group)
+        om.h_prob, _ = read_hist("p_det", lh5_file, group=group)
+        om.h_prob_uncert, _ = read_hist("p_det_err", lh5_file, group=group)
         return om
 
-    def _prepare_hist(self, **hist_kwargs) -> hist.Hist:
+    def _prepare_hist(self) -> np.ndarray:
         """Prepare an empty histogram with the parameters global to this run."""
-        bounds = self.settings["range_in_m"]
-        bins = self.settings["bins"]
-        return hist.Hist(
-            hist.axis.Regular(
-                bins=bins[0],
-                start=bounds[0][0],
-                stop=bounds[0][1],
-                name="x",
-                flow=False,
-            ),
-            hist.axis.Regular(
-                bins=bins[1],
-                start=bounds[1][0],
-                stop=bounds[1][1],
-                name="y",
-                flow=False,
-            ),
-            hist.axis.Regular(
-                bins=bins[2],
-                start=bounds[2][0],
-                stop=bounds[2][1],
-                name="z",
-                flow=False,
-            ),
-            **hist_kwargs,
-        )
+        return np.zeros(shape=tuple(self.settings["bins"]), dtype=np.float64)
 
     def fill_vertex(self, loc) -> None:
         if self.h_vertex is None:
             self.h_vertex = self._prepare_hist()
-        self.h_vertex.fill(loc[:, 0], loc[:, 1], loc[:, 2])
+        _fill_histogram(self.h_vertex, self.binning, loc)
 
     def fill_hits(self, loc) -> None:
         if self.h_hits is None:
             self.h_hits = self._prepare_hist()
-        self.h_hits.fill(loc[:, 0], loc[:, 1], loc[:, 2])
+        _fill_histogram(self.h_hits, self.binning, loc)
 
-    def _divide_hist(self, h1: hist.Hist, h2: hist.Hist) -> tuple[hist.Hist, hist.Hist]:
+    def _divide_hist(self, h1: NDArray, h2: NDArray) -> tuple[NDArray, NDArray]:
         """Calculate the ratio (and its standard error) from two histograms."""
-        h1 = h1.view()
-        h2 = h2.view()
-
-        ratio_hist = self._prepare_hist()
-        ratio = ratio_hist.view()
-        ratio_err_hist = self._prepare_hist()
-        ratio_err = ratio_err_hist.view()
+        ratio = self._prepare_hist()
+        ratio_err = self._prepare_hist()
 
         ratio[:] = np.divide(h1, h2, where=(h2 != 0))
         ratio[h2 == 0] = -1  # -1 denotes no statistics.
@@ -104,15 +109,15 @@ class OpticalMap:
         ratio_err[h2 != 0] = np.sqrt((ratio[h2 != 0]) * (1 - ratio[h2 != 0]) / h2[h2 != 0])
         ratio_err[h2 == 0] = -1  # -1 denotes no statistics.
 
-        return ratio_hist, ratio_err_hist
+        return ratio, ratio_err
 
     def create_probability(self) -> None:
         self.h_prob, self.h_prob_uncert = self._divide_hist(self.h_hits, self.h_vertex)
 
     def write_lh5(self, lh5_file: str, group: str = "all") -> None:
-        def write_hist(h: hist.Hist, name: str, fn: str, group: str = "all"):
+        def write_hist(h: NDArray, name: str, fn: str, group: str = "all"):
             lh5.write(
-                Histogram(h, binedge_attrs={"units": "m"}),
+                Histogram(h, self.binning),
                 name,
                 fn,
                 group=group,

@@ -4,7 +4,6 @@ import logging
 from typing import Callable, Literal
 
 import numpy as np
-import pandas as pd
 import scipy.optimize
 from lgdo import Array, Histogram, Scalar, lh5
 from lgdo.lh5 import LH5Iterator, LH5Store
@@ -22,11 +21,11 @@ def get_channel_efficiency(rawid: int, settings) -> float:  # noqa: ARG001
 
 
 def _optmaps_for_channels(
-    optmap_events: pd.DataFrame,
+    optmap_evt_columns: list[str],
     settings,
     chfilter: tuple[str | int] | Literal["*"] = (),
 ):
-    all_det_ids = [ch_id for ch_id in list(optmap_events.columns) if ch_id.isnumeric()]
+    all_det_ids = [ch_id for ch_id in optmap_evt_columns if ch_id.isnumeric()]
     eff = np.array([get_channel_efficiency(int(ch_id), settings) for ch_id in all_det_ids])
 
     if chfilter != "*":
@@ -119,9 +118,9 @@ def create_optical_maps(
         tuple of detector ids that will be included in the resulting optmap. Those have to match
         the column names in ``optmap_events_it``.
     """
-    optmap_events = optmap_events_it.read(0)[0].view_as("pd")  # peek into the file.
+    optmap_evt_columns = list(optmap_events_it.read(0)[0].keys())  # peek into the file.
     all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
-        optmap_events, settings, chfilter=chfilter
+        optmap_evt_columns, settings, chfilter=chfilter
     )
 
     # indices for later use in _compute_hit_maps.
@@ -151,6 +150,7 @@ def create_optical_maps(
         hits_per_primary[0 : len(hpp)] += hpp
 
     hits_per_primary = hits_per_primary[0:hits_per_primary_len]
+
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
 
     # all maps share the same vertex histogram.
