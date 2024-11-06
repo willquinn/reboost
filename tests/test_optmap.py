@@ -6,7 +6,7 @@ from lgdo import Array, Table, lh5
 
 from reboost.optical.convolve import convolve
 from reboost.optical.create import create_optical_maps, merge_optical_maps
-from reboost.optical.evt import build_optmap_evt, read_optmap_evt
+from reboost.optical.evt import build_optmap_evt
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_optmap_evt(tbl_hits, tmp_path):
 
 
 @pytest.fixture
-def tbl_evt(tmp_path):
+def tbl_evt_fns(tmp_path) -> tuple[str]:
     evt_count = 100
     rng = np.random.default_rng(1234)
     loc = rng.uniform(size=(evt_count, 3))
@@ -75,38 +75,35 @@ def tbl_evt(tmp_path):
 
     evt_file = tmp_path / "evt.lh5"
     lh5.write(tbl_evt, name="optmap_evt", lh5_file=evt_file, wo_mode="overwrite_file")
-    return evt_file
+    return (str(evt_file),)
 
 
 @pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
-def test_optmap_create(tbl_evt):
+def test_optmap_create(tbl_evt_fns):
     settings = {
         "range_in_m": [[0, 1], [0, 1], [0, 1]],
         "bins": [10, 10, 10],
     }
 
     # test creation only with the summary map.
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=(),
         output_lh5_fn=None,
     )
 
     # test creation with all detectors.
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=("001", "002", "003"),
         output_lh5_fn=None,
     )
 
     # test creation with some detectors.
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=("001"),
         output_lh5_fn=None,
@@ -114,24 +111,22 @@ def test_optmap_create(tbl_evt):
 
 
 @pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
-def test_optmap_merge(tbl_evt, tmp_path):
+def test_optmap_merge(tbl_evt_fns, tmp_path):
     settings = {
         "range_in_m": [[0, 1], [0, 1], [0, 1]],
         "bins": [10, 10, 10],
     }
 
     map1_fn = str(tmp_path / "map1.lh5")
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=("001"),
         output_lh5_fn=map1_fn,
     )
     map2_fn = str(tmp_path / "map2.lh5")
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=("001"),
         output_lh5_fn=map2_fn,
@@ -149,7 +144,7 @@ def tbl_edep(tmp_path):
 
     evtids = np.arange(1, evt_count + 1)
 
-    tbl_evt = Table(
+    tbl_edep = Table(
         {
             "evtid": Array(evtids),
             "particle": Array(22 * np.ones(evt_count, dtype=np.int64)),
@@ -167,21 +162,20 @@ def tbl_edep(tmp_path):
     )
 
     evt_file = tmp_path / "edep.lh5"
-    lh5.write(tbl_evt, name="/hit/x", lh5_file=evt_file, wo_mode="overwrite_file")
+    lh5.write(tbl_edep, name="/hit/x", lh5_file=evt_file, wo_mode="overwrite_file")
     return evt_file
 
 
 @pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
-def test_optmap_convolve(tbl_evt, tbl_edep, tmp_path):
+def test_optmap_convolve(tbl_evt_fns, tbl_edep, tmp_path):
     settings = {
         "range_in_m": [[0, 1], [0, 1], [0, 1]],
         "bins": [2, 2, 2],
     }
 
     map_fn = str(tmp_path / "map.lh5")
-    evt_it = read_optmap_evt(str(tbl_evt), buffer_len=10)
     create_optical_maps(
-        evt_it,
+        tbl_evt_fns,
         settings,
         chfilter=("001"),
         output_lh5_fn=map_fn,

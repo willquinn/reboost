@@ -176,7 +176,6 @@ def optical_cli() -> None:
     # STEP 2a: build map file from evt tier
     if args.command == "createmap":
         from reboost.optical.create import create_optical_maps
-        from reboost.optical.evt import read_optmap_evt
 
         _check_input_file(parser, args.input)
         _check_output_file(parser, args.output)
@@ -192,10 +191,10 @@ def optical_cli() -> None:
             with Path.open(Path(args.detectors)) as detectors_f:
                 chfilter = json.load(detectors_f)
 
-        optmap_events = read_optmap_evt(args.input, args.bufsize)
         create_optical_maps(
-            optmap_events,
+            args.input,
             settings,
+            args.bufsize,
             chfilter=chfilter,
             output_lh5_fn=args.output,
             check_after_create=args.check,

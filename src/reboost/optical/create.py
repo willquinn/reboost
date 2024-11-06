@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import logging
+import queue
 from typing import Callable, Literal
 
 import numpy as np
 import scipy.optimize
 from lgdo import Array, Histogram, Scalar, lh5
-from lgdo.lh5 import LH5Iterator, LH5Store
+from lgdo.lh5 import LH5Store
 from numba import njit
 from numpy.typing import NDArray
 
+from .evt import EVT_TABLE_NAME, read_optmap_evt
 from .optmap import OpticalMap
 
 log = logging.getLogger(__name__)
@@ -100,36 +102,10 @@ def _fit_multi_ph_detection(hits_per_primary) -> float:
     return best_fit_exponent
 
 
-def create_optical_maps(
-    optmap_events_it: LH5Iterator,
-    settings,
-    chfilter=(),
-    output_lh5_fn=None,
-    after_save: Callable[[int, str, OpticalMap]] | None = None,
-    check_after_create: bool = False,
+def _create_optical_maps_thread(
+    optmap_events_fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx, ret_queue
 ) -> None:
-    """
-    Parameters
-    ----------
-    optmap_events_it
-        :class:`LH5Iterator` of a table with columns ``{x,y,z}loc`` and one column (with numeric
-        header) for each SiPM channel.
-    chfilter
-        tuple of detector ids that will be included in the resulting optmap. Those have to match
-        the column names in ``optmap_events_it``.
-    """
-    optmap_evt_columns = list(optmap_events_it.read(0)[0].keys())  # peek into the file.
-    all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
-        optmap_evt_columns, settings, chfilter=chfilter
-    )
-
-    # indices for later use in _compute_hit_maps.
-    ch_idx_to_map_idx = np.array(
-        [optmap_det_ids.index(d) + 1 if d in optmap_det_ids else -1 for d in all_det_ids]
-    )
-    assert np.sum(ch_idx_to_map_idx > 0) == len(optmaps) - 1
-
-    log.info("creating optical map groups: %s", ", ".join(["all", *optmap_det_ids]))
+    optmap_events_it = read_optmap_evt(optmap_events_fn, buffer_len)
 
     hits_per_primary = np.zeros(10, dtype=np.int64)
     hits_per_primary_len = 0
@@ -149,8 +125,62 @@ def create_optical_maps(
         hits_per_primary_len = max(hits_per_primary_len, len(hpp))
         hits_per_primary[0 : len(hpp)] += hpp
 
-    hits_per_primary = hits_per_primary[0:hits_per_primary_len]
+    ret_queue.put(tuple(hits_per_primary[0:hits_per_primary_len]))
 
+
+def create_optical_maps(
+    optmap_events_fn: list[str],
+    settings,
+    buffer_len: int = int(5e6),
+    chfilter=(),
+    output_lh5_fn=None,
+    after_save: Callable[[int, str, OpticalMap]] | None = None,
+    check_after_create: bool = False,
+) -> None:
+    """
+    Parameters
+    ----------
+    optmap_events_fn
+        list of filenames to lh5 files with a table ``/optmap_evt`` with columns ``{x,y,z}loc``
+        and one column (with numeric header) for each SiPM channel.
+    chfilter
+        tuple of detector ids that will be included in the resulting optmap. Those have to match
+        the column names in ``optmap_events_fn``.
+    """
+    if len(optmap_events_fn) == 0:
+        msg = "no input files specified"
+        raise ValueError(msg)
+
+    optmap_evt_columns = list(
+        lh5.read(EVT_TABLE_NAME, optmap_events_fn[0], start_row=0, n_rows=1).keys()
+    )  # peek into the (first) file to find column names.
+    all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
+        optmap_evt_columns, settings, chfilter=chfilter
+    )
+
+    # indices for later use in _compute_hit_maps.
+    ch_idx_to_map_idx = np.array(
+        [optmap_det_ids.index(d) + 1 if d in optmap_det_ids else -1 for d in all_det_ids]
+    )
+    assert np.sum(ch_idx_to_map_idx > 0) == len(optmaps) - 1
+
+    log.info("creating optical map groups: %s", ", ".join(["all", *optmap_det_ids]))
+
+    # sequential mode.
+    q = queue.SimpleQueue()
+    for fn in optmap_events_fn:
+        _create_optical_maps_thread(fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx, q)
+
+    # merge hitcounts.
+    q.put(None)  # sentinel value.
+    hits_per_primary = np.zeros(10, dtype=np.int64)
+    hits_per_primary_len = 0
+    for hitcounts in iter(q.get, None):
+        assert isinstance(hitcounts, tuple)
+        hits_per_primary[0 : len(hitcounts)] += np.array(hitcounts)
+        hits_per_primary_len = max(hits_per_primary_len, len(hitcounts))
+
+    hits_per_primary = hits_per_primary[0:hits_per_primary_len]
     hits_per_primary_exponent = _fit_multi_ph_detection(hits_per_primary)
 
     # all maps share the same vertex histogram.
@@ -201,8 +231,8 @@ def merge_optical_maps(map_l5_files: list[str], output_lh5_fn: str, settings) ->
     # merge maps one-by-one.
     for d in all_det_ntuples:
         merged_map = OpticalMap.create_empty(d, settings)
-        merged_nr_gen = merged_map.h_vertex.view()
-        merged_nr_det = merged_map.h_hits.view()
+        merged_nr_gen = merged_map.h_vertex
+        merged_nr_det = merged_map.h_hits
 
         all_edges = None
         for optmap_fn in map_l5_files:

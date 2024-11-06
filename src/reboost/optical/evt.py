@@ -10,6 +10,8 @@ from lgdo.types import Table
 
 log = logging.getLogger(__name__)
 
+EVT_TABLE_NAME = "optmap_evt"
+
 
 def build_optmap_evt(
     lh5_in_file: str, lh5_out_file: str, detectors: Iterable[str | int], buffer_len: int = int(5e6)
@@ -59,7 +61,7 @@ def build_optmap_evt(
             assert hits_sum == hist_expected
 
             log.info("store evt file %s (%d)", lh5_out_file, vert_it_count - 1)
-            lh5.write(Table(vert_df), name="optmap_evt", lh5_file=lh5_out_file, wo_mode="append")
+            lh5.write(Table(vert_df), name=EVT_TABLE_NAME, lh5_file=lh5_out_file, wo_mode="append")
             vert_df = None
 
         # read the next vertex chunk into memory.
@@ -89,4 +91,4 @@ def build_optmap_evt(
 
 
 def read_optmap_evt(lh5_file: str, buffer_len: int = int(5e6)) -> LH5Iterator:
-    return LH5Iterator(lh5_file, "optmap_evt", buffer_len=buffer_len)
+    return LH5Iterator(lh5_file, EVT_TABLE_NAME, buffer_len=buffer_len)
