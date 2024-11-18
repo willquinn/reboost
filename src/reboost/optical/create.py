@@ -6,7 +6,7 @@ from typing import Callable, Literal
 
 import numpy as np
 import scipy.optimize
-from lgdo import Array, Histogram, Scalar, lh5
+from lgdo import Array, Histogram, Scalar, Struct, lh5
 from lgdo.lh5 import LH5Store
 from numba import njit
 from numpy.typing import NDArray
@@ -16,6 +16,17 @@ from .evt import EVT_TABLE_NAME, read_optmap_evt
 from .optmap import OpticalMap
 
 log = logging.getLogger(__name__)
+
+
+# This is only a hotfix to ensure that histogram axes are pickleable... urgh.
+def _struct_update_datatype(self) -> None:
+    if not hasattr(self, "attrs"):
+        return
+    self.attrs["datatype"] = self.form_datatype()
+
+
+if mp.current_process() != "MainProcess":
+    Struct.update_datatype = _struct_update_datatype
 
 
 def get_channel_efficiency(rawid: int, settings) -> float:  # noqa: ARG001
@@ -222,6 +233,7 @@ def create_optical_maps(
             initargs=(optmaps, log.getEffectiveLevel()),
         )
 
+        pool_results = []
         for fn in optmap_events_fn:
             r = pool.apply_async(
                 _create_optical_maps_process,
