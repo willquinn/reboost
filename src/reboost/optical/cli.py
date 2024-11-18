@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
-import colorlog
+from ..log_utils import setup_log
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,13 @@ def optical_cli() -> None:
     map_parser.add_argument(
         "--detectors",
         help="file that contains a list of detector ids that will be produced as additional output maps.",
+    )
+    map_parser.add_argument(
+        "--n-procs",
+        "-N",
+        type=int,
+        default=1,
+        help="number of worker processes to use. default: %(default)e",
     )
     map_parser.add_argument(
         "--check",
@@ -150,14 +157,7 @@ def optical_cli() -> None:
 
     args = parser.parse_args()
 
-    handler = colorlog.StreamHandler()
-    handler.setFormatter(
-        colorlog.ColoredFormatter("%(log_color)s%(name)s [%(levelname)s] %(message)s")
-    )
-    logger = logging.getLogger("reboost.optical")
-    logger.addHandler(handler)
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
+    setup_log(logging.DEBUG if args.verbose else None)
 
     # STEP 1: build evt file from hit tier
     if args.command == "evt":
@@ -198,6 +198,7 @@ def optical_cli() -> None:
             chfilter=chfilter,
             output_lh5_fn=args.output,
             check_after_create=args.check,
+            n_procs=args.n_procs,
         )
 
     # STEP 2b: view maps

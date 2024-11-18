@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import logging
+import math
+import multiprocessing as mp
 from collections.abc import Mapping
 
 import numpy as np
@@ -14,32 +18,39 @@ def _fill_histogram(h: NDArray, binning: NDArray, xyz: NDArray) -> None:
     assert xyz.shape[1] == 3
     xyz = xyz.T
 
-    idx = np.zeros(xyz.shape[1], np.float64)  # bin indices for flattened array
+    idx = np.zeros(xyz.shape[1], np.int64)  # bin indices for flattened array
     oor_mask = np.ones(xyz.shape[1], np.bool_)  # mask to remove out of range values
     stride = [s // h.dtype.itemsize for s in h.strides]
-    for col, ax, s in zip(xyz, binning, stride):
+    dims = range(xyz.shape[0])
+    for col, ax, s, dim in zip(xyz, binning, stride, dims):
         assert ax.is_range
         assert ax.closedleft
-        idx += s * np.floor((col - ax.first) / ax.step - int(not ax.closedleft))
         oor_mask &= (ax.first <= col) & (col < ax.last)
+        idx_s = np.floor((col - ax.first).astype(np.float64) / ax.step).astype(np.int64)
+        assert np.all(idx_s[oor_mask] < h.shape[dim])
+        idx += s * idx_s
 
     # increment bin contents
-    idx = idx[oor_mask].astype(np.int64)
+    idx = idx[oor_mask]
     np.add.at(h.reshape(-1), idx, 1)
 
 
 class OpticalMap:
-    def __init__(self, name: str, settings: Mapping[str, str]):
+    def __init__(self, name: str, settings: Mapping[str, str], use_shmem: bool = False):
         self.settings = settings
+        self.name = name
+        self.use_shmem = use_shmem
 
         self.h_vertex = None
         self.h_hits = None
         self.h_prob = None
         self.h_prob_uncert = None
-        self.name = name
+
         self.binning = None
 
         if settings is not None:
+            self._single_shape = tuple(self.settings["bins"])
+
             binedge_attrs = {"units": "m"}
             bins = self.settings["bins"]
             bounds = self.settings["range_in_m"]
@@ -79,23 +90,52 @@ class OpticalMap:
         return om
 
     def _prepare_hist(self) -> np.ndarray:
-        """Prepare an empty histogram with the parameters global to this run."""
-        return np.zeros(shape=tuple(self.settings["bins"]), dtype=np.float64)
+        """Prepare an empty histogram with the parameters global to this map instance."""
+        if self.use_shmem:
+            assert mp.current_process().name == "MainProcess"
+            a = self._mp_man.Array(ctypes.c_double, math.prod(self._single_shape))
+            self._nda(a).fill(0)
+            return a
+        return np.zeros(shape=self._single_shape, dtype=np.float64)
+
+    def _nda(self, h) -> NDArray:
+        if not self.use_shmem:
+            return h
+        return np.ndarray(self._single_shape, dtype=np.float64, buffer=h.get_obj())
+
+    def _lock_nda(self, h):
+        if not self.use_shmem:
+            return contextlib.nullcontext
+        return h.get_lock
+
+    def _mp_preinit(self, mp_man, vertex: bool) -> None:
+        self._mp_man = mp_man
+        if self.h_vertex is None and vertex:
+            self.h_vertex = self._prepare_hist()
+        if self.h_hits is None:
+            self.h_hits = self._prepare_hist()
 
     def fill_vertex(self, loc) -> None:
         if self.h_vertex is None:
             self.h_vertex = self._prepare_hist()
-        _fill_histogram(self.h_vertex, self.binning, loc)
+        with self._lock_nda(self.h_vertex)():
+            _fill_histogram(self._nda(self.h_vertex), self.binning, loc)
 
     def fill_hits(self, loc) -> None:
         if self.h_hits is None:
             self.h_hits = self._prepare_hist()
-        _fill_histogram(self.h_hits, self.binning, loc)
+        with self._lock_nda(self.h_hits)():
+            _fill_histogram(self._nda(self.h_hits), self.binning, loc)
 
     def _divide_hist(self, h1: NDArray, h2: NDArray) -> tuple[NDArray, NDArray]:
         """Calculate the ratio (and its standard error) from two histograms."""
-        ratio = self._prepare_hist()
-        ratio_err = self._prepare_hist()
+
+        h1 = self._nda(h1)
+        h2 = self._nda(h2)
+
+        ratio_0 = self._prepare_hist()
+        ratio_err_0 = self._prepare_hist()
+        ratio, ratio_err = self._nda(ratio_0), self._nda(ratio_err_0)
 
         ratio[:] = np.divide(h1, h2, where=(h2 != 0))
         ratio[h2 == 0] = -1  # -1 denotes no statistics.
@@ -109,7 +149,7 @@ class OpticalMap:
         ratio_err[h2 != 0] = np.sqrt((ratio[h2 != 0]) * (1 - ratio[h2 != 0]) / h2[h2 != 0])
         ratio_err[h2 == 0] = -1  # -1 denotes no statistics.
 
-        return ratio, ratio_err
+        return ratio_0, ratio_err_0
 
     def create_probability(self) -> None:
         self.h_prob, self.h_prob_uncert = self._divide_hist(self.h_hits, self.h_vertex)
@@ -117,7 +157,7 @@ class OpticalMap:
     def write_lh5(self, lh5_file: str, group: str = "all") -> None:
         def write_hist(h: NDArray, name: str, fn: str, group: str = "all"):
             lh5.write(
-                Histogram(h, self.binning),
+                Histogram(self._nda(h), self.binning),
                 name,
                 fn,
                 group=group,
@@ -135,9 +175,9 @@ class OpticalMap:
         def _warn(fmt: str, *args):
             log.warning("%s" + fmt, log_prefix, *args)  # noqa: G003
 
-        h_vertex = self.h_vertex
-        h_prob = self.h_prob
-        h_prob_uncert = self.h_prob_uncert
+        h_vertex = self._nda(self.h_vertex)
+        h_prob = self._nda(self.h_prob)
+        h_prob_uncert = self._nda(self.h_prob_uncert)
 
         ncells = h_vertex.shape[0] * h_vertex.shape[1] * h_vertex.shape[2]
 

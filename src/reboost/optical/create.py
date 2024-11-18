@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import queue
+import multiprocessing as mp
 from typing import Callable, Literal
 
 import numpy as np
@@ -11,6 +11,7 @@ from lgdo.lh5 import LH5Store
 from numba import njit
 from numpy.typing import NDArray
 
+from ..log_utils import setup_log
 from .evt import EVT_TABLE_NAME, read_optmap_evt
 from .optmap import OpticalMap
 
@@ -26,6 +27,7 @@ def _optmaps_for_channels(
     optmap_evt_columns: list[str],
     settings,
     chfilter: tuple[str | int] | Literal["*"] = (),
+    use_shmem: bool = False,
 ):
     all_det_ids = [ch_id for ch_id in optmap_evt_columns if ch_id.isnumeric()]
     eff = np.array([get_channel_efficiency(int(ch_id), settings) for ch_id in all_det_ids])
@@ -39,7 +41,7 @@ def _optmaps_for_channels(
     log.info("creating empty optmaps")
     optmap_count = len(optmap_det_ids) + 1
     optmaps = [
-        OpticalMap("all" if i == 0 else optmap_det_ids[i - 1], settings)
+        OpticalMap("all" if i == 0 else optmap_det_ids[i - 1], settings, use_shmem)
         for i in range(optmap_count)
     ]
 
@@ -102,8 +104,34 @@ def _fit_multi_ph_detection(hits_per_primary) -> float:
     return best_fit_exponent
 
 
-def _create_optical_maps_thread(
-    optmap_events_fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx, ret_queue
+def _create_optical_maps_process_init(optmaps, log_level) -> None:
+    # need to use shared global state. passing the shared memory arrays via "normal" arguments to
+    # the worker function is not supported...
+    global _shared_optmaps  # noqa: PLW0603
+    _shared_optmaps = optmaps
+
+    # setup logging in the worker process.
+    setup_log(log_level, multiproc=True)
+
+
+def _create_optical_maps_process(
+    optmap_events_fn, buffer_len, all_det_ids, eff, ch_idx_to_map_idx
+) -> None:
+    log.info("started worker task for %s", optmap_events_fn)
+    x = _create_optical_maps_chunk(
+        optmap_events_fn,
+        buffer_len,
+        all_det_ids,
+        eff,
+        _shared_optmaps,
+        ch_idx_to_map_idx,
+    )
+    log.info("finished worker task for %s", optmap_events_fn)
+    return tuple(int(i) for i in x)
+
+
+def _create_optical_maps_chunk(
+    optmap_events_fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx
 ) -> None:
     optmap_events_it = read_optmap_evt(optmap_events_fn, buffer_len)
 
@@ -116,16 +144,16 @@ def _create_optical_maps_thread(
         hitcounts = optmap_events[all_det_ids].to_numpy()
         loc = optmap_events[["xloc", "yloc", "zloc"]].to_numpy()
 
-        log.info("filling vertex histogram (%d)", it_count)
+        log.debug("filling vertex histogram (%d)", it_count)
         optmaps[0].fill_vertex(loc)
 
-        log.info("computing map (%d)", it_count)
+        log.debug("filling hits histogram (%d)", it_count)
         _fill_hit_maps(optmaps, loc, hitcounts, eff, ch_idx_to_map_idx, rng)
         hpp = _count_multi_ph_detection(hitcounts)
         hits_per_primary_len = max(hits_per_primary_len, len(hpp))
         hits_per_primary[0 : len(hpp)] += hpp
 
-    ret_queue.put(tuple(hits_per_primary[0:hits_per_primary_len]))
+    return hits_per_primary[0:hits_per_primary_len]
 
 
 def create_optical_maps(
@@ -136,6 +164,7 @@ def create_optical_maps(
     output_lh5_fn=None,
     after_save: Callable[[int, str, OpticalMap]] | None = None,
     check_after_create: bool = False,
+    n_procs: int | None = 1,
 ) -> None:
     """
     Parameters
@@ -146,16 +175,20 @@ def create_optical_maps(
     chfilter
         tuple of detector ids that will be included in the resulting optmap. Those have to match
         the column names in ``optmap_events_fn``.
+    n_procs
+        number of processors, ``1`` for sequential mode, or ``None`` to use all processors.
     """
     if len(optmap_events_fn) == 0:
         msg = "no input files specified"
         raise ValueError(msg)
 
+    use_shmem = n_procs > 1
+
     optmap_evt_columns = list(
         lh5.read(EVT_TABLE_NAME, optmap_events_fn[0], start_row=0, n_rows=1).keys()
     )  # peek into the (first) file to find column names.
     all_det_ids, eff, optmaps, optmap_det_ids = _optmaps_for_channels(
-        optmap_evt_columns, settings, chfilter=chfilter
+        optmap_evt_columns, settings, chfilter=chfilter, use_shmem=use_shmem
     )
 
     # indices for later use in _compute_hit_maps.
@@ -166,18 +199,54 @@ def create_optical_maps(
 
     log.info("creating optical map groups: %s", ", ".join(["all", *optmap_det_ids]))
 
+    q = []
+
     # sequential mode.
-    q = queue.SimpleQueue()
-    for fn in optmap_events_fn:
-        _create_optical_maps_thread(fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx, q)
+    if not use_shmem:
+        for fn in optmap_events_fn:
+            q.append(
+                _create_optical_maps_chunk(
+                    fn, buffer_len, all_det_ids, eff, optmaps, ch_idx_to_map_idx
+                )
+            )
+    else:
+        ctx = mp.get_context("forkserver")
+        for i in range(len(optmaps)):
+            optmaps[i]._mp_preinit(ctx, vertex=(i == 0))
+
+        # note: errors thrown in initializer will make the main process hang in an endless loop.
+        # unfortunately, we cannot pass the objects later, as they contain shmem/array handles.
+        pool = ctx.Pool(
+            n_procs,
+            initializer=_create_optical_maps_process_init,
+            initargs=(optmaps, log.getEffectiveLevel()),
+        )
+
+        for fn in optmap_events_fn:
+            r = pool.apply_async(
+                _create_optical_maps_process,
+                args=(fn, buffer_len, all_det_ids, eff, ch_idx_to_map_idx),
+            )
+            pool_results.append((r, fn))
+
+        pool.close()
+        for r, fn in pool_results:
+            try:
+                q.append(np.array(r.get()))
+            except BaseException as e:
+                msg = f"error while processing file {fn}"
+                raise RuntimeError(msg) from e  # re-throw errors of workers.
+        log.debug("got all worker results")
+        pool.join()
+        log.info("joined worker process pool")
 
     # merge hitcounts.
-    q.put(None)  # sentinel value.
+    if len(q) != len(optmap_events_fn):
+        log.error("got %d results for %d files", len(q), len(optmap_events_fn))
     hits_per_primary = np.zeros(10, dtype=np.int64)
     hits_per_primary_len = 0
-    for hitcounts in iter(q.get, None):
-        assert isinstance(hitcounts, tuple)
-        hits_per_primary[0 : len(hitcounts)] += np.array(hitcounts)
+    for hitcounts in q:
+        hits_per_primary[0 : len(hitcounts)] += hitcounts
         hits_per_primary_len = max(hits_per_primary_len, len(hitcounts))
 
     hits_per_primary = hits_per_primary[0:hits_per_primary_len]
