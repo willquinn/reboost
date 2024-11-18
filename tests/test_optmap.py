@@ -109,6 +109,15 @@ def test_optmap_create(tbl_evt_fns):
         output_lh5_fn=None,
     )
 
+    # test creation on multiple cores.
+    create_optical_maps(
+        tbl_evt_fns,
+        settings,
+        chfilter=("001", "002", "003"),
+        output_lh5_fn=None,
+        n_procs=2,
+    )
+
 
 @pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
 def test_optmap_merge(tbl_evt_fns, tmp_path):
