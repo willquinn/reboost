@@ -40,8 +40,8 @@ def tbl_hits(tmp_path):
     )
 
     hit_file = tmp_path / "hit.lh5"
-    lh5.write(tbl_vertices, name="hit/vertices", lh5_file=hit_file, wo_mode="overwrite_file")
-    lh5.write(tbl_optical, name="hit/optical", lh5_file=hit_file, wo_mode="overwrite")
+    lh5.write(tbl_vertices, name="stp/vertices", lh5_file=hit_file, wo_mode="overwrite_file")
+    lh5.write(tbl_optical, name="stp/optical", lh5_file=hit_file, wo_mode="overwrite")
     return hit_file
 
 
@@ -171,7 +171,7 @@ def tbl_edep(tmp_path):
     )
 
     evt_file = tmp_path / "edep.lh5"
-    lh5.write(tbl_edep, name="/hit/x", lh5_file=evt_file, wo_mode="overwrite_file")
+    lh5.write(tbl_edep, name="/stp/x", lh5_file=evt_file, wo_mode="overwrite_file")
     return evt_file
 
 
@@ -194,7 +194,7 @@ def test_optmap_convolve(tbl_evt_fns, tbl_edep, tmp_path):
     convolve(
         map_fn,
         str(tbl_edep),
-        "/hit/x",
+        "/stp/x",
         material="lar",
         output_file=out_fn,
         buffer_len=10,

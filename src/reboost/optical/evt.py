@@ -19,8 +19,8 @@ def build_optmap_evt(
     """Create a faster map for lookup of the hits in each detector, for each primary event."""
     log.info("reading file %s", lh5_in_file)
 
-    vert_it = LH5Iterator(lh5_in_file, "hit/vertices", buffer_len=buffer_len)
-    opti_it = LH5Iterator(lh5_in_file, "hit/optical", buffer_len=buffer_len)
+    vert_it = LH5Iterator(lh5_in_file, "stp/vertices", buffer_len=buffer_len)
+    opti_it = LH5Iterator(lh5_in_file, "stp/optical", buffer_len=buffer_len)
 
     detectors = [str(d) for d in detectors]
     for d in detectors:
@@ -30,7 +30,22 @@ def build_optmap_evt(
     vert_df = None
     vert_df_bounds = None
     vert_it_count = 0
-    hist_expected = 0
+    hits_expected = 0
+
+    def _store_vert_df():
+        nonlocal vert_df
+        if vert_df is None:
+            return
+
+        # sanity check that we did process all hits.
+        hits_sum = 0
+        for d in detectors:
+            hits_sum += np.sum(vert_df[d])
+        assert hits_sum == hits_expected
+
+        log.info("store evt file %s (%d)", lh5_out_file, vert_it_count - 1)
+        lh5.write(Table(vert_df), name=EVT_TABLE_NAME, lh5_file=lh5_out_file, wo_mode="append")
+        vert_df = None
 
     # helper function for "windowed join". while iterating the optical hits, we have to
     # make sure that we always have the correct combined vertex/hit output table available.
@@ -39,7 +54,7 @@ def build_optmap_evt(
     # monotonic, i.e. later chunks do not contain lower evtids than the previous chunk(s).
     # Going back is not implemented.
     def _ensure_vert_df(vert_it: LH5Iterator, evtid: int):
-        nonlocal vert_df, vert_df_bounds, vert_it_count, hist_expected
+        nonlocal vert_df, vert_df_bounds, vert_it_count, hits_expected
 
         if vert_df_bounds is not None and vert_df is not None:
             if evtid < vert_df_bounds[0]:
@@ -52,26 +67,17 @@ def build_optmap_evt(
         # the next event table chunk.
 
         vert_it_count += 1
-        # we have filled a dataframe, save it to disk.
-        if vert_df is not None:
-            # sanity check that we did process all hits.
-            hits_sum = 0
-            for d in detectors:
-                hits_sum += np.sum(vert_df[d])
-            assert hits_sum == hist_expected
-
-            log.info("store evt file %s (%d)", lh5_out_file, vert_it_count - 1)
-            lh5.write(Table(vert_df), name=EVT_TABLE_NAME, lh5_file=lh5_out_file, wo_mode="append")
-            vert_df = None
+        # we might have filled a dataframe, save it to disk.
+        _store_vert_df()
 
         # read the next vertex chunk into memory.
         (vert_lgdo, vert_entry, vert_n_rows) = next(vert_it)
-        vert_df = vert_lgdo.view_as("pd")
+        vert_df = vert_lgdo.view_as("pd").iloc[0:vert_n_rows]
 
         # prepare vertex coordinates.
         vert_df = vert_df.set_index("evtid", drop=True).drop(["n_part", "time"], axis=1)
         vert_df_bounds = [vert_df.index.min(), vert_df.index.max()]
-        hist_expected = 0
+        hits_expected = 0
         # add columns for all detectors.
         for d in detectors:
             vert_df[d] = hit_count_type(0)
@@ -87,7 +93,9 @@ def build_optmap_evt(
         for t in opti_df[["evtid", "det_uid"]].itertuples(name=None, index=False):
             _ensure_vert_df(vert_it, t[0])
             vert_df.loc[t[0], str(t[1])] += 1
-            hist_expected += 1
+            hits_expected += 1
+
+    _store_vert_df()  # store the last chunk.
 
 
 def read_optmap_evt(lh5_file: str, buffer_len: int = int(5e6)) -> LH5Iterator:
