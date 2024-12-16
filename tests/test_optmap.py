@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from lgdo import Array, Table, lh5
 
-from reboost.optical.convolve import convolve
-from reboost.optical.create import create_optical_maps, merge_optical_maps
-from reboost.optical.evt import build_optmap_evt
+from reboost.optmap.convolve import convolve
+from reboost.optmap.create import create_optical_maps, merge_optical_maps
+from reboost.optmap.evt import build_optmap_evt
 
 
 @pytest.fixture
