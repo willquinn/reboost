@@ -72,7 +72,7 @@ test = [
 
 [project.scripts]
 reboost-optical = "reboost.optmap.cli:optical_cli"
-reboost         = "rboost.cli:cli"
+reboost         = "reboost.cli:cli"
 
 [tool.setuptools]
 include-package-data = true
