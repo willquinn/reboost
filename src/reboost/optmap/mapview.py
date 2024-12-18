@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 
 def _get_weights(viewdata: dict):
-    rolled = np.roll([0, 1, 2], -viewdata["axis"])
+    rolled = np.array([viewdata["axis"]] + [i for i in [2, 1, 0] if i != viewdata["axis"]])
     weights = viewdata["weights"].transpose(*rolled)
 
     extent_axes = [i for i in np.flip(rolled) if i != viewdata["axis"]]
@@ -160,6 +160,7 @@ def view_optmap(
         interpolation="none",
         cmap=cmap,
         extent=extent,
+        origin="lower",
     )
 
     if title is None:
