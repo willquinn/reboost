@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import logging
 import multiprocessing as mp
 from typing import Callable, Literal
@@ -154,6 +155,11 @@ def _create_optical_maps_chunk(
         hits_per_primary_len = max(hits_per_primary_len, len(hpp))
         hits_per_primary[0 : len(hpp)] += hpp
 
+    # commit the final part of the hits to the maps.
+    for i in range(len(optmaps)):
+        optmaps[i].fill_hits_flush()
+        gc.collect()
+
     return hits_per_primary[0:hits_per_primary_len]
 
 
@@ -161,8 +167,8 @@ def create_optical_maps(
     optmap_events_fn: list[str],
     settings,
     buffer_len: int = int(5e6),
-    chfilter=(),
-    output_lh5_fn=None,
+    chfilter: tuple[str | int] | Literal["*"] = (),
+    output_lh5_fn: str | None = None,
     after_save: Callable[[int, str, OpticalMap]] | None = None,
     check_after_create: bool = False,
     n_procs: int | None = 1,
@@ -219,6 +225,7 @@ def create_optical_maps(
             n_procs,
             initializer=_create_optical_maps_process_init,
             initargs=(optmaps, log.getEffectiveLevel()),
+            maxtasksperchild=1,  # re-create worker after each task, to avoid leaking memory.
         )
 
         pool_results = []
