@@ -20,7 +20,8 @@ def optical_cli() -> None:
     parser.add_argument(
         "--verbose",
         "-v",
-        action="store_true",
+        action="count",
+        default=0,
         help="""Increase the program verbosity""",
     )
 
@@ -157,11 +158,12 @@ def optical_cli() -> None:
 
     args = parser.parse_args()
 
-    setup_log(logging.DEBUG if args.verbose else None)
+    log_level = (None, logging.INFO, logging.DEBUG)[min(args.verbose, 2)]
+    setup_log(log_level)
 
     # STEP 1: build evt file from hit tier
     if args.command == "evt":
-        from reboost.optical.evt import build_optmap_evt
+        from reboost.optmap.evt import build_optmap_evt
 
         _check_input_file(parser, args.detectors)
         _check_input_file(parser, args.input)
@@ -175,7 +177,7 @@ def optical_cli() -> None:
 
     # STEP 2a: build map file from evt tier
     if args.command == "createmap":
-        from reboost.optical.create import create_optical_maps
+        from reboost.optmap.create import create_optical_maps
 
         _check_input_file(parser, args.input)
         _check_output_file(parser, args.output)
@@ -203,7 +205,7 @@ def optical_cli() -> None:
 
     # STEP 2b: view maps
     if args.command == "viewmap":
-        from reboost.optical.mapview import view_optmap
+        from reboost.optmap.mapview import view_optmap
 
         _check_input_file(parser, args.input)
         if args.divide is not None:
@@ -220,7 +222,7 @@ def optical_cli() -> None:
 
     # STEP 2c: merge maps
     if args.command == "mergemap":
-        from reboost.optical.create import merge_optical_maps
+        from reboost.optmap.create import merge_optical_maps
 
         # load settings for binning from config file.
         _check_input_file(parser, args.input, "settings")
@@ -233,14 +235,14 @@ def optical_cli() -> None:
 
     # STEP 2d: check maps
     if args.command == "checkmap":
-        from reboost.optical.create import check_optical_map
+        from reboost.optmap.create import check_optical_map
 
         _check_input_file(parser, args.input)
         check_optical_map(args.input)
 
     # STEP 3: convolve with hits from non-optical simulations
     if args.command == "convolve":
-        from reboost.optical.convolve import convolve
+        from reboost.optmap.convolve import convolve
 
         _check_input_file(parser, [args.map, args.edep])
         _check_output_file(parser, args.output)
