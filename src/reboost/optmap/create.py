@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copyreg
 import gc
 import logging
 import multiprocessing as mp
@@ -9,8 +8,7 @@ from typing import Callable, Literal
 
 import numpy as np
 import scipy.optimize
-from lgdo import Array, Histogram, Scalar, Struct, lh5
-from lgdo.lh5.exceptions import LH5DecodeError, LH5EncodeError
+from lgdo import Array, Histogram, Scalar, lh5
 from numba import njit
 from numpy.typing import NDArray
 
@@ -19,22 +17,6 @@ from .evt import EVT_TABLE_NAME, read_optmap_evt
 from .optmap import OpticalMap
 
 log = logging.getLogger(__name__)
-
-
-# This is only a hotfix to ensure that histogram axes are pickleable... urgh.
-def _struct_update_datatype(self) -> None:
-    if not hasattr(self, "attrs"):
-        return
-    self.attrs["datatype"] = self.form_datatype()
-
-
-if mp.current_process() != "MainProcess":
-    Struct.update_datatype = _struct_update_datatype
-
-# This is only a hotfix to ensure that LH5{De,En}codeErrors are picklable.
-if LH5EncodeError.__reduce__ == BaseException.__reduce__:
-    copyreg.pickle(LH5EncodeError, lambda e: (LH5EncodeError, (*e.args, e.file, e.group, e.name)))
-    copyreg.pickle(LH5DecodeError, lambda e: (LH5DecodeError, (*e.args, e.file, e.obj)))
 
 
 def _optmaps_for_channels(
