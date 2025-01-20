@@ -96,12 +96,11 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
 
     # loop over the lh5_tables
     lh5_table_list = [table for table in lh5.ls(stp_file, "stp/") if "vertices" not in table]
-    lh5_table = lh5_table_list[0]
 
     # get rows in the table
     evtid_buffer = 10000
     stp_buffer = 1000
-    elm_sum = None
+    elm_sum = {lh5_table.replace("stp/", ""): None for lh5_table in lh5_table_list}
 
     # start row for each table
     start_row = {lh5_tab: 0 for lh5_tab in lh5_table_list}
@@ -136,10 +135,6 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
                 )
                 evtids = lh5_obj.view_as("ak")
 
-                # this should never happen
-                if n_read == 0:
-                    break
-
                 # if the evtids_proc is not set then this is the first valid chunk
                 if evtids_proc is None:
                     evtids_proc = evtids
@@ -164,9 +159,15 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
 
             mode = "of" if (vidx == 0 and idx == 0) else "append"
 
-            if elm_file is not None:
-                store.write(out_tab, f"elm/{lh5_table.replace('stp/','')}", elm_file, wo_mode=mode)
-            else:
-                elm_sum = elm if elm_sum is None else ak.concatenate((elm_sum, elm))
+            lh5_subgroup = lh5_table.replace("stp/", "")
 
-    return elm_sum
+            if elm_file is not None:
+                store.write(out_tab, f"elm/{lh5_subgroup}", elm_file, wo_mode=mode)
+            else:
+                elm_sum[lh5_subgroup] = (
+                    elm
+                    if elm_sum[lh5_subgroup] is None
+                    else ak.concatenate((elm_sum[lh5_subgroup], elm))
+                )
+
+    return ak.Array(elm_sum)
