@@ -197,16 +197,31 @@ def test_elm_iterator(test_data_files):
         )
 
         # iterate over the elm and the test file
+        for det in ["det1", "det2"]:
+            evtids = None
+            elm_it = ELMIterator(
+                elm_file,
+                stp_file,
+                lh5_group=det,
+                start_row=0,
+                stp_field="stp",
+                n_rows=5000,
+                read_vertices=True,
+                buffer=100,
+            )
+            # get the overall evtids
+            for stps, _, _, _ in elm_it:
+                if stps is None:
+                    continue
 
-        elm_it = ELMIterator(
-            elm_file,
-            stp_file,
-            lh5_group="det1",
-            start_row=0,
-            stp_field="stp",
-            n_rows=5000,
-            read_vertices=True,
-            buffer=100,
-        )
-        for _, _, _, _ in elm_it:
-            assert True
+                evtids = (
+                    stps.view_as("ak").evtid
+                    if evtids is None
+                    else ak.concatenate((evtids, stps.view_as("ak").evtid))
+                )
+
+            evtids_read = lh5.read_as(
+                f"stp/{det}/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
+            )
+
+            assert ak.all(evtids == evtids_read)

@@ -6,7 +6,7 @@ import typing
 from collections.abc import Mapping
 
 import awkward as ak
-from legendmeta import AttrsDict
+from dbetto import AttrsDict
 from lgdo import lh5
 from lgdo.lh5 import LH5Store
 from lgdo.types import LGDO
@@ -96,28 +96,30 @@ class ELMIterator:
         # remove empty rows
         elm_ak = elm_ak[elm_ak.n_rows > 0]
 
-        # extract range of stp rows to read
-        start = elm_ak.start_row[0]
-        n = sum(elm_ak.n_rows)
+        if len(elm_ak) > 0:
+            # extract range of stp rows to read
+            start = elm_ak.start_row[0]
+            n = sum(elm_ak.n_rows)
 
-        stp_rows, n_steps = self.sto.read(
-            f"{self.stp_field}/{self.lh5_group}", self.stp_file, start_row=start, n_rows=n
-        )
-
-        self.current_i_entry += 1
-
-        if self.read_vertices:
-            vert_rows, _ = self.sto.read(
-                f"{self.stp_field}/vertices",
-                self.stp_file,
-                start_row=self.start_row,
-                n_rows=n_rows,
+            stp_rows, n_steps = self.sto.read(
+                f"{self.stp_field}/{self.lh5_group}", self.stp_file, start_row=start, n_rows=n
             )
-        else:
-            vert_rows = None
-        # vertex table should have same structure as elm
 
-        return (stp_rows, vert_rows, self.current_i_entry, n_steps)
+            self.current_i_entry += 1
+
+            if self.read_vertices:
+                vert_rows, _ = self.sto.read(
+                    f"{self.stp_field}/vertices",
+                    self.stp_file,
+                    start_row=self.start_row,
+                    n_rows=n_rows,
+                )
+            else:
+                vert_rows = None
+            # vertex table should have same structure as elm
+
+            return (stp_rows, vert_rows, self.current_i_entry, n_steps)
+        return (None, None, self.current_i_entry, 0)
 
 
 def build_hit(
@@ -376,6 +378,9 @@ def build_hit(
                     )
                     for stps, _, chunk_idx, _ in elm_it:
                         # converting to awwkard
+                        if stps is None:
+                            continue
+
                         ak_obj = stps.view_as("ak")
 
                         hit_table = shape.group.eval_hit_table_layout(
