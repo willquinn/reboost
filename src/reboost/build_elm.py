@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 
 import awkward as ak
@@ -204,7 +205,10 @@ def build_elm(
     lh5_table_list = [table for table in lh5.ls(stp_file, "stp/") if "vertices" not in table]
 
     # get rows in the table
-    elm_sum = {lh5_table.replace("stp/", ""): None for lh5_table in lh5_table_list}
+    if elm_file is None:
+        elm_sum = {lh5_table.replace("stp/", ""): None for lh5_table in lh5_table_list}
+    else:
+        elm_sum = None
 
     # start row for each table
     start_row = {lh5_tab: 0 for lh5_tab in lh5_table_list}
@@ -239,7 +243,7 @@ def build_elm(
             elm = get_elm_rows(evtids, vert_ak, start_row=chunk_row)
 
             for field in ["evtid", "n_rows", "start_row"]:
-                out_tab.add_field(field, Array(elm[field]))
+                out_tab.add_field(field, Array(elm[field].to_numpy()))
 
             # write the output file
             mode = "of" if (vidx == 0 and idx == 0) else "append"
@@ -250,9 +254,12 @@ def build_elm(
                 store.write(out_tab, f"elm/{lh5_subgroup}", elm_file, wo_mode=mode)
             else:
                 elm_sum[lh5_subgroup] = (
-                    elm
+                    copy.deepcopy(elm)
                     if elm_sum[lh5_subgroup] is None
                     else ak.concatenate((elm_sum[lh5_subgroup], elm))
                 )
 
-    return ak.Array(elm_sum)
+    # return if it was requested to keep elm in memory
+    if elm_sum is not None:
+        return ak.Array(elm_sum)
+    return None

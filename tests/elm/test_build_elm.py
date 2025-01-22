@@ -143,6 +143,7 @@ def test_build_elm(test_data_files):
     # try with different buffers
 
     for buffer in [71, 100, 1000, 2000, 40000]:
+        # two files (no gaps and gaps)
         for test in ["simple", "gaps"]:
             evtids = lh5.read_as(
                 "stp/vertices/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
@@ -154,18 +155,25 @@ def test_build_elm(test_data_files):
             evtids2_read = lh5.read_as(
                 "stp/det2/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
             )
+            # check both returning and saving
+            for elm_file in [str(test_data_files / f"{test}_elm.lh5"), None]:
+                elm = build_elm(
+                    str(test_data_files / f"{test}_test.lh5"),
+                    elm_file,
+                    id_name="evtid",
+                    evtid_buffer=1000,
+                    stp_buffer=buffer,
+                )
 
-            elm = build_elm(
-                str(test_data_files / f"{test}_test.lh5"),
-                None,
-                id_name="evtid",
-                evtid_buffer=1000,
-                stp_buffer=buffer,
-            )
-            # elm should have the right evtid
-            assert ak.all(elm.det1.evtid == evtids)
-            assert ak.all(elm.det2.evtid == evtids)
+                if elm_file is not None:
+                    elm1 = lh5.read("elm/det1", elm_file).view_as("ak")
+                    elm2 = lh5.read("elm/det2", elm_file).view_as("ak")
+                    elm = ak.Array({"det1": elm1, "det2": elm2})
+                # elm should have the right evtid
 
-            # total number of rows should be correct
-            assert np.sum(elm.det1.n_rows) == len(evtids1_read)
-            assert np.sum(elm.det2.n_rows) == len(evtids2_read)
+                assert ak.all(elm.det1.evtid.to_numpy() == evtids)
+                assert ak.all(elm.det2.evtid.to_numpy() == evtids)
+
+                # total number of rows should be correct
+                assert np.sum(elm.det1.n_rows) == len(evtids1_read)
+                assert np.sum(elm.det2.n_rows) == len(evtids2_read)
