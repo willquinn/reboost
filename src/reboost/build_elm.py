@@ -4,13 +4,14 @@ import logging
 
 import awkward as ak
 import numpy as np
-from lgdo import Array, LH5Iterator, LH5Store, Table, lh5
+from lgdo import Array, Table, lh5
+from lgdo.lh5 import LH5Iterator, LH5Store
 from numpy.typing import ArrayLike
 
 log = logging.getLogger(__name__)
 
 
-def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0):
+def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0) -> ak.Array:
     """Get the rows of the event lookup map (elm).
 
     Parameters
@@ -21,7 +22,14 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0):
         Array of simulated evtid for the vertices.
     start_row
         The index of the first element of stp_evtids.
+
+    Returns
+    -------
+    an awkward array of the `elm`.
     """
+    # convert inputs
+    stp_evtids = np.array(stp_evtids)
+    vert = np.array(vert)
 
     # check that the steps and vertices are sorted or the algorithm will fail
 
@@ -34,7 +42,6 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0):
         raise ValueError(msg)
 
     # convert to numpy
-    stp_evtids = np.array(stp_evtids)
     stp_indices = np.arange(len(stp_evtids)) + start_row
 
     # cut the arrays
@@ -56,6 +63,10 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0):
     positions = np.searchsorted(output.evtid, ak_tmp.evtid)
 
     # add a check that every ak_tmp evtid is in output.evtid ?
+    if not np.all(np.isin(ak_tmp.evtid, output.evtid)):
+        bad_evtid = ak_tmp.evtid[~np.isin(ak_tmp.evtid, output.evtid)]
+        msg = f"Error not every evtid in the stp table is present in the vertex table {bad_evtid} are not"
+        raise ValueError(msg)
 
     # get the start row
     start_row = np.array(ak.Array([np.nan] * len(vert)))
@@ -71,7 +82,92 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0):
     return output
 
 
-def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid") -> ak.Array | None:
+def get_stp_evtids(
+    lh5_table: str,
+    stp_file: str,
+    id_name: str,
+    start_row: int,
+    last_vertex_evtid: int,
+    stp_buffer: int,
+) -> tuple[int, int, ak.Array]:
+    """Extracts the rows of a stp file corresponding to a particular range of `evtid`.
+    The reading starts at `start_row` to allow for iterating through the file. The iteration
+    stops when the `evtid` being read is larger than `last_vertex_evtid`.
+
+    Parameters
+    ----------
+    lh5_table
+        the table name to read.
+    stp_file
+        the file name path.
+    id_name
+        the name of the `evtid` field.
+    start_row
+        the row to begin reading.
+    last_vertex_evtid
+        the last evtid to read up to.
+    stp_buffer
+        the number of rows to read at once.
+
+    Returns
+    -------
+         a tuple of the updated `start_row`, the first row for the chunk and an awkward Array of the steps.
+    """
+
+    # make a LH5Store
+    store = LH5Store()
+
+    # some outputs
+    evtids_proc = None
+    last_evtid = 0
+    chunk_start = 0
+
+    # get the total number of rows
+    n_rows_tot = store.read_n_rows(f"{lh5_table}/{id_name}", stp_file)
+
+    # iterate over the file
+    # stop when the entire file is read
+
+    while start_row < n_rows_tot:
+        # read the file
+        lh5_obj, n_read = store.read(
+            f"{lh5_table}/{id_name}",
+            stp_file,
+            start_row=start_row,
+            n_rows=stp_buffer,
+        )
+        evtids = lh5_obj.view_as("ak")
+
+        # if the evtids_proc is not set then this is the first valid chunk
+        if evtids_proc is None:
+            evtids_proc = evtids
+            chunk_start = start_row
+        elif evtids[0] <= last_vertex_evtid:
+            evtids_proc = ak.concatenate((evtids_proc, evtids))
+
+        # get the last evtid
+        last_evtid = evtids[-1]
+
+        # if the last evtid is greater than the last vertex we can stop reading
+        if last_evtid > last_vertex_evtid or (start_row + n_read >= n_rows_tot):
+            break
+
+        # increase rhe start row for the next read
+
+        if start_row + n_read <= n_rows_tot:
+            start_row += n_read
+
+    return start_row, chunk_start, evtids_proc
+
+
+def build_elm(
+    stp_file: str,
+    elm_file: str | None,
+    *,
+    id_name: str = "g4_evtid",
+    evtid_buffer: int = 10000,
+    stp_buffer: int = 1000,
+) -> ak.Array | None:
     """Builds a g4_evtid look up (elm) from the stp data.
 
     This object is used by `reboost` to efficiency iterate through the data.
@@ -87,6 +183,11 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
         path to the elm data, can also be `None` in which case an `ak.Array` is returned in memory.
     id_name
         name of the evtid file, default `g4_evtid`.
+    stp_buffer
+        the number of rows of the step file to read at a time
+    evtid_buffer
+        the number of evtids to read at a time
+
     Returns
     -------
     either `None` or an `ak.Array`
@@ -98,8 +199,6 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
     lh5_table_list = [table for table in lh5.ls(stp_file, "stp/") if "vertices" not in table]
 
     # get rows in the table
-    evtid_buffer = 10000
-    stp_buffer = 1000
     elm_sum = {lh5_table.replace("stp/", ""): None for lh5_table in lh5_table_list}
 
     # start row for each table
@@ -116,47 +215,28 @@ def build_elm(stp_file: str, elm_file: str | None, *, id_name: str = "g4_evtid")
             # create the output table
             out_tab = Table(size=len(vert_ak))
 
-            last_evtid = 0
-            # iterate over the file
+            # read the stp rows starting from `start_row` until the
+            # evtid is larger than that in the vertices
 
-            evtids_proc = None
-            chunk_start = 0
+            start_row_tmp, chunk_row, evtids = get_stp_evtids(
+                lh5_table,
+                stp_file,
+                id_name,
+                start_row[lh5_table],
+                last_vertex_evtid=vert_ak[-1],
+                stp_buffer=stp_buffer,
+            )
 
-            n_rows_tot = store.read_n_rows(f"{lh5_table}/{id_name}", stp_file)
+            start_row[lh5_table] = start_row_tmp
 
-            # stop when the entire file is read
-            while start_row[lh5_table] < n_rows_tot:
-                # read the file
-                lh5_obj, n_read = store.read(
-                    f"{lh5_table}/{id_name}",
-                    stp_file,
-                    start_row=start_row[lh5_table],
-                    n_rows=stp_buffer,
-                )
-                evtids = lh5_obj.view_as("ak")
+            # now get the elm rows
 
-                # if the evtids_proc is not set then this is the first valid chunk
-                if evtids_proc is None:
-                    evtids_proc = evtids
-                    chunk_start = start_row[lh5_table]
-                else:
-                    ak.concatenate((evtids_proc, evtids))
-
-                # get the last evtid
-                last_evtid = evtids[-1]
-
-                # if the last evtid is greater than the last vertex we can stop reading
-                if last_evtid > vert_ak[-1]:
-                    break
-
-                # increase rhe start row for the next read
-                start_row[lh5_table] += n_read
-
-            elm = get_elm_rows(evtids, vert_ak, start_row=chunk_start)
+            elm = get_elm_rows(evtids, vert_ak, start_row=chunk_row)
 
             for field in ["evtid", "n_rows", "start_row"]:
                 out_tab.add_field(field, Array(elm[field]))
 
+            # write the output file
             mode = "of" if (vidx == 0 and idx == 0) else "append"
 
             lh5_subgroup = lh5_table.replace("stp/", "")
