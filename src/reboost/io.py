@@ -34,9 +34,5 @@ def load_dict(fname: str, ftype: str | None = None) -> dict:
         raise NotImplementedError(msg)
 
 
-def get_iterator(file, lh5_table, buffer):
-    raise NotImplementedError
-
-
 def get_wo_mode(file_idx, group_idx, in_det_idx, out_det_idx, chunk_idx, max_chunk_idx):
     raise NotImplementedError

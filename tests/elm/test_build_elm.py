@@ -6,6 +6,7 @@ import pytest
 from lgdo import Table, lh5
 
 from reboost.build_elm import build_elm, get_elm_rows, get_stp_evtids
+from reboost.build_hit import ELMIterator
 
 
 # test the basic (awkward operations) to get the elm rows
@@ -67,7 +68,7 @@ def test_data_files(tmp_path):
 
     # file with some gaps (multithreaded mode)
 
-    vertex_evtid = ak.Array({"evtid": np.sort(np.unique(rng.integers(0, 200000, size=1000)))})
+    vertex_evtid = ak.Array({"evtid": np.sort(np.unique(rng.integers(0, 200000, size=10000)))})
     lh5.write(Table(vertex_evtid), "stp/vertices", tmp_path / "gaps_test.lh5", wo_mode="of")
 
     # make some simple stp file
@@ -177,3 +178,35 @@ def test_build_elm(test_data_files):
                 # total number of rows should be correct
                 assert np.sum(elm.det1.n_rows) == len(evtids1_read)
                 assert np.sum(elm.det2.n_rows) == len(evtids2_read)
+
+
+def test_elm_iterator(test_data_files):
+    # make an elm
+
+    # two files (no gaps and gaps)
+    for test in ["simple", "gaps"]:
+        stp_file = str(test_data_files / f"{test}_test.lh5")
+        elm_file = str(test_data_files / f"{test}_elm.lh5")
+
+        build_elm(
+            stp_file,
+            elm_file,
+            id_name="evtid",
+            evtid_buffer=1000,
+            stp_buffer=100000,
+        )
+
+        # iterate over the elm and the test file
+
+        elm_it = ELMIterator(
+            elm_file,
+            stp_file,
+            lh5_group="det1",
+            start_row=0,
+            stp_field="stp",
+            n_rows=5000,
+            read_vertices=True,
+            buffer=100,
+        )
+        for _, _, _, _ in elm_it:
+            assert True

@@ -2,25 +2,133 @@ from __future__ import annotations
 
 import io
 import logging
+import typing
 from collections.abc import Mapping
 
 import awkward as ak
 from legendmeta import AttrsDict
 from lgdo import lh5
+from lgdo.lh5 import LH5Store
+from lgdo.types import LGDO
 
-import utils
-
-from . import core, shape
+from . import core, shape, utils
 
 log = logging.getLogger(__name__)
+
+
+class ELMIterator:
+    """A class to iterate over the rows of an event lookup map"""
+
+    def __init__(
+        self,
+        elm_file: str,
+        stp_file: str,
+        lh5_group: str,
+        start_row: int,
+        n_rows: int | None,
+        *,
+        stp_field: str = "stp",
+        read_vertices: bool = False,
+        buffer: int = 10000,
+    ):
+        """Constructor for the ELMIterator.
+
+        Parameters
+        ----------
+        elm_file
+            the file containing the event lookup map.
+        stp_file
+            the file containing the steps to read.
+        lh5_subgroup
+            the name of the lh5 subgroup to read.
+        start_row
+            the first row to read.
+        n_rows
+            the number of rows to read, if `None` read them all.
+        read_vertices
+            whether to read also the vertices table.
+        buffer
+            the number of rows to read at once.
+
+        """
+
+        # initialise
+        self.elm_file = elm_file
+        self.stp_file = stp_file
+        self.lh5_group = lh5_group
+        self.start_row = start_row
+        self.start_row_tmp = start_row
+        self.n_rows = n_rows
+        self.buffer = buffer
+        self.current_i_entry = 0
+        self.read_vertices = read_vertices
+        self.stp_field = stp_field
+
+        # would be good to replace with an iterator
+        self.sto = LH5Store()
+        self.n_rows_read = 0
+
+    def __iter__(self) -> typing.Iterator:
+        self.current_i_entry = 0
+        self.n_rows_read = 0
+        self.start_row_tmp = self.start_row
+        return self
+
+    def __next__(self) -> tuple[LGDO, LGDO | None, int, int]:
+        # get the number of rows to read
+        rows_left = self.n_rows - self.n_rows_read
+        n_rows = self.buffer if (self.buffer > rows_left) else rows_left
+
+        # read the elm rows
+        elm_rows, n_rows_read = self.sto.read(
+            f"elm/{self.lh5_group}", self.elm_file, start_row=self.start_row_tmp, n_rows=n_rows
+        )
+
+        self.n_rows_read += n_rows_read
+        self.start_row_tmp += n_rows_read
+
+        if n_rows_read == 0:
+            raise StopIteration
+
+        # view our elm as an awkward array
+        elm_ak = elm_rows.view_as("ak")
+
+        # remove empty rows
+        elm_ak = elm_ak[elm_ak.n_rows > 0]
+
+        # extract range of stp rows to read
+        start = elm_ak.start_row[0]
+        n = sum(elm_ak.n_rows)
+
+        stp_rows, n_steps = self.sto.read(
+            f"{self.stp_field}/{self.lh5_group}", self.stp_file, start_row=start, n_rows=n
+        )
+
+        self.current_i_entry += 1
+
+        if self.read_vertices:
+            vert_rows, _ = self.sto.read(
+                f"{self.stp_field}/vertices",
+                self.stp_file,
+                start_row=self.start_row,
+                n_rows=n_rows,
+            )
+        else:
+            vert_rows = None
+        # vertex table should have same structure as elm
+
+        return (stp_rows, vert_rows, self.current_i_entry, n_steps)
 
 
 def build_hit(
     config: Mapping | str,
     args: Mapping | AttrsDict,
-    input_files: list | str,
+    stp_files: list | str,
+    elm_files: list | str,
     file_out: str | None = None,
     *,
+    start_evtid: int = 0,
+    n_evtid: int | None = None,
     in_field: str = "stp",
     out_field: str = "hit",
     merge_input_files: bool = True,
@@ -184,10 +292,16 @@ def build_hit(
 
         args
             dictionary or :class:`legendmeta.AttrsDict` of the global arguments.
+        start_evtid
+            first evtid to read.
+        n_evtid
+            number of evtid to read, if `None` read all.
         file_out
             name of the output file, if `None` return an `ak.Array` in memory of the post-processed hits.
-        input_files
-            list of string of the path to the files to process.
+        stp_files
+            list of string of the path to the stp files to process.
+        elm_files
+            list of string of the path to the elm files to process.
         in_field
             name of the input field in the remage output.
         out_field
@@ -217,13 +331,16 @@ def build_hit(
     global_objects = utils.dict2tuple(global_objects_dict)
 
     # get the input files
-    if isinstance(input_files, str):
-        input_files = list(input_files)
+    if isinstance(stp_files, str):
+        stp_files = list(stp_files)
+
+    if isinstance(elm_files, str):
+        elm_files = list(elm_files)
 
     output_table = None
 
     # iterate over files
-    for file_idx, file_in in enumerate(input_files):
+    for file_idx, (stp_file, elm_file) in enumerate(zip(stp_files, elm_files)):
         # loop over processing groups
         for group_idx, proc_group in enumerate(config["processing_groups"]):
             # get the list of detectors
@@ -244,26 +361,23 @@ def build_hit(
                     proc_group=proc_group,
                 )
 
-                # begin iterating over the input file / files
-                it, entries, max_idx = io.get_iterator(
-                    file=file_in, lh5_table=f"{in_field}/{in_detector}", buffer=buffer
-                )
-                buffer_rows = None
-
-                # iterate over the LH5 file
-                for idx, (lh5_obj, _, n_rows) in enumerate(it):
-                    # converting to awwkard
-                    ak_obj = lh5.view_as(lh5_obj, "ak")
-
-                    if idx == max_idx:
-                        ak_obj = ak_obj[:n_rows]
-
-                    ak_obj, buffer_rows, wo_mode = core.merge_arrays(
-                        ak_obj, buffer_rows=buffer_rows
+                # begin iterating over the elm
+                for out_det_idx, out_detector in enumerate(out_detectors):
+                    # loop over the rows
+                    elm_it = ELMIterator(
+                        elm_file,
+                        stp_file,
+                        lh5_group=in_detector,
+                        start_row=start_evtid,
+                        stp_field=in_field,
+                        n_rows=n_evtid,
+                        read_vertices=True,
+                        buffer=buffer,
                     )
+                    for stps, _, chunk_idx, _ in elm_it:
+                        # converting to awwkard
+                        ak_obj = stps.view_as("ak")
 
-                    # loop over output detectors
-                    for out_det_idx, out_detector in enumerate(out_detectors):
                         hit_table = shape.group.eval_hit_table_layout(
                             ak_obj, expression=proc_group["hit_table_layout"]
                         )
@@ -302,8 +416,7 @@ def build_hit(
                             group_idx=group_idx,
                             in_det_idx=in_det_idx,
                             out_det_idx=out_det_idx,
-                            chunk_idx=idx,
-                            max_chunk_idx=max_idx,
+                            chunk_idx=chunk_idx,
                         )
 
                         if file_out is not None:
