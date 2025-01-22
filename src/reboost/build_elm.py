@@ -71,10 +71,10 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0) 
         raise ValueError(msg)
 
     # get the start row
-    start_row = np.array(ak.Array([np.nan] * len(vert)), dtype=float)
+    start_row = np.array([np.nan] * len(vert), dtype=float)
     start_row[positions] = ak.fill_none(ak.firsts(ak_tmp.indices), np.nan)
 
-    n_row = np.array(ak.Array([0] * len(vert)), dtype=float)
+    n_row = np.array([0] * len(vert), dtype=float)
     n_row[positions] = ak.num(ak_tmp.indices)
 
     # add to the  output
