@@ -28,8 +28,10 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0) 
     an awkward array of the `elm`.
     """
     # convert inputs
-    stp_evtids = np.array(stp_evtids)
-    vert = np.array(vert)
+    if not isinstance(stp_evtids, np.ndarray):
+        stp_evtids = np.array(stp_evtids)
+    if not isinstance(vert, np.ndarray):
+        vert = np.array(vert)
 
     # check that the steps and vertices are sorted or the algorithm will fail
 
@@ -69,10 +71,10 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0) 
         raise ValueError(msg)
 
     # get the start row
-    start_row = np.array(ak.Array([np.nan] * len(vert)))
+    start_row = np.array(ak.Array([np.nan] * len(vert)), dtype=float)
     start_row[positions] = ak.fill_none(ak.firsts(ak_tmp.indices), np.nan)
 
-    n_row = np.array(ak.Array([0] * len(vert)))
+    n_row = np.array(ak.Array([0] * len(vert)), dtype=float)
     n_row[positions] = ak.num(ak_tmp.indices)
 
     # add to the  output
