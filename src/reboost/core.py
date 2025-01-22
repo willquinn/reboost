@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-import utils
+from . import utils
 
 logging.basicConfig(level=logging.INFO)
 

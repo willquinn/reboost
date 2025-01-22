@@ -5,12 +5,12 @@ import logging
 from collections.abc import Mapping
 
 import awkward as ak
-import core
-import shape
 from legendmeta import AttrsDict
 from lgdo import lh5
 
 import utils
+
+from . import core, shape
 
 log = logging.getLogger(__name__)
 
