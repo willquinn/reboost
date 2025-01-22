@@ -29,9 +29,12 @@ def get_elm_rows(stp_evtids: ArrayLike, vert: ArrayLike, *, start_row: int = 0) 
     """
     # convert inputs
     if not isinstance(stp_evtids, np.ndarray):
-        stp_evtids = np.array(stp_evtids)
+        stp_evtids = (
+            stp_evtids.to_numpy() if isinstance(stp_evtids, ak.Array) else np.array(stp_evtids)
+        )
+
     if not isinstance(vert, np.ndarray):
-        vert = np.array(vert)
+        vert = vert.to_numpy() if isinstance(vert, ak.Array) else np.array(vert)
 
     # check that the steps and vertices are sorted or the algorithm will fail
 
