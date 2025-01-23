@@ -20,7 +20,7 @@ def evaluate_expression(
 ) -> LGDO:
     """Evaluate an expression returning an LGDO.
 
-    Uses :function:`LGDO.Table.eval()` to compute a new column for the
+    Uses :func:`LGDO.Table.eval()` to compute a new column for the
     hit table. The expression can depend on any field in the Table
     (prefixed with table_name.) or objects contained in the local dict.
     In addition, the expression can use packages which are then imported.
@@ -32,7 +32,7 @@ def evaluate_expression(
     expression
         the expression to evaluate.
     local_dict
-        local dictionary to pass to :function:`LGDO.Table.eval()`.
+        local dictionary to pass to :func:`LGDO.Table.eval()`.
     table_name
         keyword used to refer to the fields in the table.
 
@@ -58,7 +58,7 @@ def evaluate_object(
     expression
         the expression to evaluate.
     local_dict
-        local dictionary to pass to :function:`LGDO.Table.eval()`.
+        local dictionary to pass to :func:`LGDO.Table.eval()`.
 
     Returns
     -------
@@ -87,6 +87,13 @@ def get_global_objects(expressions: dict[str, str], *, local_dict: dict) -> dict
         obj_name: evaluate_object(expression, local_dict=local_dict)
         for obj_name, expression in expressions.items()
     }
+
+
+def get_detectors_mapping(
+    output_detector_expression: str, input_detector_map_expression: str | None, objects: dict
+) -> dict:
+    """Extract the output detectors and the list of input to outputs."""
+    raise NotImplementedError
 
 
 def get_detector_objects(output_detectors, proc_group, args, global_objects):

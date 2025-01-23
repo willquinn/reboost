@@ -228,19 +228,19 @@ def build_hit(
     for file_idx, (stp_file, elm_file) in enumerate(zip(files["stp"], files["elm"])):
         # loop over processing groups
         for group_idx, proc_group in enumerate(config["processing_groups"]):
-            # get the list of detectors
-            output_detectors = utils.get_detector_list(proc_group["output_detectors"])
+            # extract the output detectors and the mapping to input detectors
 
-            # get the mapping from output to input
-            in_detectors_mapping = utils.get_detector_mapping(
-                proc_group.get("input_detector_mapping", None), output_detectors=output_detectors
+            detectors_mapping = core.get_detector_mapping(
+                output_expression=proc_group.get("output_detectors"),
+                input_map_expression=proc_group.get("input_detector_mapping", None),
+                objects=global_objects_dict,
             )
 
             # loop over detectors
-            for in_det_idx, (in_detector, out_detectors) in enumerate(in_detectors_mapping.items()):
+            for in_det_idx, (in_detector, out_detectors) in enumerate(detectors_mapping.items()):
                 # get detector objects
                 det_objects = core.get_detector_objects(
-                    output_detectors=output_detectors,
+                    output_detectors=out_detectors,
                     args=args,
                     global_objects=global_objects,
                     proc_group=proc_group,
