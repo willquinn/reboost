@@ -2,138 +2,28 @@ from __future__ import annotations
 
 import io
 import logging
-import typing
 from collections.abc import Mapping
 
 import awkward as ak
 from dbetto import AttrsDict
 from lgdo import lh5
-from lgdo.lh5 import LH5Store
-from lgdo.types import LGDO
 
-from . import core, shape, utils
+from reboost.iterator import ELMIterator
+
+from . import core, utils
 
 log = logging.getLogger(__name__)
-
-
-class ELMIterator:
-    """A class to iterate over the rows of an event lookup map"""
-
-    def __init__(
-        self,
-        elm_file: str,
-        stp_file: str,
-        lh5_group: str,
-        start_row: int,
-        n_rows: int | None,
-        *,
-        stp_field: str = "stp",
-        read_vertices: bool = False,
-        buffer: int = 10000,
-    ):
-        """Constructor for the ELMIterator.
-
-        Parameters
-        ----------
-        elm_file
-            the file containing the event lookup map.
-        stp_file
-            the file containing the steps to read.
-        lh5_subgroup
-            the name of the lh5 subgroup to read.
-        start_row
-            the first row to read.
-        n_rows
-            the number of rows to read, if `None` read them all.
-        read_vertices
-            whether to read also the vertices table.
-        buffer
-            the number of rows to read at once.
-
-        """
-
-        # initialise
-        self.elm_file = elm_file
-        self.stp_file = stp_file
-        self.lh5_group = lh5_group
-        self.start_row = start_row
-        self.start_row_tmp = start_row
-        self.n_rows = n_rows
-        self.buffer = buffer
-        self.current_i_entry = 0
-        self.read_vertices = read_vertices
-        self.stp_field = stp_field
-
-        # would be good to replace with an iterator
-        self.sto = LH5Store()
-        self.n_rows_read = 0
-
-    def __iter__(self) -> typing.Iterator:
-        self.current_i_entry = 0
-        self.n_rows_read = 0
-        self.start_row_tmp = self.start_row
-        return self
-
-    def __next__(self) -> tuple[LGDO, LGDO | None, int, int]:
-        # get the number of rows to read
-        rows_left = self.n_rows - self.n_rows_read
-        n_rows = self.buffer if (self.buffer > rows_left) else rows_left
-
-        # read the elm rows
-        elm_rows, n_rows_read = self.sto.read(
-            f"elm/{self.lh5_group}", self.elm_file, start_row=self.start_row_tmp, n_rows=n_rows
-        )
-
-        self.n_rows_read += n_rows_read
-        self.start_row_tmp += n_rows_read
-
-        if n_rows_read == 0:
-            raise StopIteration
-
-        # view our elm as an awkward array
-        elm_ak = elm_rows.view_as("ak")
-
-        # remove empty rows
-        elm_ak = elm_ak[elm_ak.n_rows > 0]
-
-        if len(elm_ak) > 0:
-            # extract range of stp rows to read
-            start = elm_ak.start_row[0]
-            n = sum(elm_ak.n_rows)
-
-            stp_rows, n_steps = self.sto.read(
-                f"{self.stp_field}/{self.lh5_group}", self.stp_file, start_row=start, n_rows=n
-            )
-
-            self.current_i_entry += 1
-
-            if self.read_vertices:
-                vert_rows, _ = self.sto.read(
-                    f"{self.stp_field}/vertices",
-                    self.stp_file,
-                    start_row=self.start_row,
-                    n_rows=n_rows,
-                )
-            else:
-                vert_rows = None
-            # vertex table should have same structure as elm
-
-            return (stp_rows, vert_rows, self.current_i_entry, n_steps)
-        return (None, None, self.current_i_entry, 0)
 
 
 def build_hit(
     config: Mapping | str,
     args: Mapping | AttrsDict,
-    stp_files: list | str,
-    elm_files: list | str,
-    file_out: str | None = None,
+    files: dict,
     *,
     start_evtid: int = 0,
     n_evtid: int | None = None,
     in_field: str = "stp",
     out_field: str = "hit",
-    merge_input_files: bool = True,
     buffer: int = int(5e6),
 ) -> None | ak.Array:
     """Build the hit tier from the remage step files.
@@ -298,18 +188,14 @@ def build_hit(
             first evtid to read.
         n_evtid
             number of evtid to read, if `None` read all.
-        file_out
-            name of the output file, if `None` return an `ak.Array` in memory of the post-processed hits.
-        stp_files
-            list of string of the path to the stp files to process.
-        elm_files
-            list of string of the path to the elm files to process.
+        files
+            dictionary of the files paths should contain three keys `stp`, `elm` and `hit`. Each
+            entry should be a list of files or a string. The `hit` file can also be `None` in which
+            case the hits are returned as an `ak.Array` in memory.
         in_field
             name of the input field in the remage output.
         out_field
             name of the output field
-        merge_input_files
-            whether input files should be merged into one outpit
         buffer
             buffer for use in the `LH5Iterator`.
 
@@ -324,32 +210,29 @@ def build_hit(
         args = AttrsDict(args)
 
     # get the global objects
-    global_objects_dict = {
-        obj_name: core.eval_object(expression, local_dict={"ARGS": args})
-        for obj_name, expression in config.get("objects", {}).items()
-    }
+    global_objects_dict = core.get_global_objects(
+        expressions=config.get("objects", {}).items(), local_dict={"ARGS": args}
+    )
 
     # convert to a tuple
     global_objects = utils.dict2tuple(global_objects_dict)
 
     # get the input files
-    if isinstance(stp_files, str):
-        stp_files = list(stp_files)
-
-    if isinstance(elm_files, str):
-        elm_files = list(elm_files)
+    for file_type, file_list in files.items():
+        if isinstance(file_list, str):
+            files[file_type] = list(file_list)
 
     output_table = None
 
     # iterate over files
-    for file_idx, (stp_file, elm_file) in enumerate(zip(stp_files, elm_files)):
+    for file_idx, (stp_file, elm_file) in enumerate(zip(files["stp"], files["elm"])):
         # loop over processing groups
         for group_idx, proc_group in enumerate(config["processing_groups"]):
             # get the list of detectors
-            output_detectors = core.get_detector_list(proc_group["output_detectors"])
+            output_detectors = utils.get_detector_list(proc_group["output_detectors"])
 
             # get the mapping from output to input
-            in_detectors_mapping = core.get_detector_mapping(
+            in_detectors_mapping = utils.get_detector_mapping(
                 proc_group.get("input_detector_mapping", None), output_detectors=output_detectors
             )
 
@@ -381,9 +264,9 @@ def build_hit(
                         if stps is None:
                             continue
 
+                        # produce the hit table
                         ak_obj = stps.view_as("ak")
-
-                        hit_table = shape.group.eval_hit_table_layout(
+                        hit_table = core.evaluate_hit_table_layout(
                             ak_obj, expression=proc_group["hit_table_layout"]
                         )
 
@@ -391,10 +274,10 @@ def build_hit(
                             "DETECTOR_OBJECTS": det_objects[out_detector],
                             "OBJECTS": global_objects,
                         }
-
+                        # add fields
                         for field, expression in proc_group["operations"].items():
                             # evaluate the expression
-                            col = core.eval_expression(
+                            col = core.evaluate_expression(
                                 hit_table,
                                 table_name="STEPS",
                                 expression=expression,
@@ -403,20 +286,10 @@ def build_hit(
                             hit_table.add_field(field, col)
 
                         # remove unwanted fields
-                        existing_cols = list(hit_table.keys())
-                        for col in existing_cols:
-                            if col not in proc_group["outputs"]:
-                                hit_table.remove_column(col, delete=True)
-
-                        # write the file
-                        file_out_tmp = (
-                            f"{file_out.split('.')[0]}_{file_idx}.lh5"
-                            if (merge_input_files is False)
-                            else file_out
-                        )
+                        hit_table = core.remove_columns(hit_table, outputs=proc_group["outputs"])
 
                         # get the IO mode
-                        wo_mode = io.get_wo_mode(
+                        wo_mode = utils.get_wo_mode(
                             file_idx=file_idx,
                             group_idx=group_idx,
                             in_det_idx=in_det_idx,
@@ -424,16 +297,12 @@ def build_hit(
                             chunk_idx=chunk_idx,
                         )
 
-                        if file_out is not None:
-                            file_out_tmp = (
-                                f"{file_out.split('.')[0]}_{file_idx}.lh5"
-                                if (merge_input_files is False)
-                                else file_out
-                            )
+                        # now write
+                        if files["hit"] is not None:
                             lh5.write(
                                 hit_table,
                                 f"{out_detector}/{out_field}",
-                                file_out_tmp,
+                                files["hit"][file_idx],
                                 wo_mode=wo_mode,
                             )
 
@@ -444,6 +313,7 @@ def build_hit(
                                 else ak.concatenate((output_table, hit_table.view_as("ak")))
                             )
 
+    # return output table or nothing
     if output_table is not None:
         return output_table
     return None

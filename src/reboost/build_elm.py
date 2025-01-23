@@ -235,11 +235,10 @@ def build_elm(
                 last_vertex_evtid=vert_ak[-1],
                 stp_buffer=stp_buffer,
             )
-
+            # set the start row for the next chunk
             start_row[lh5_table] = start_row_tmp
 
             # now get the elm rows
-
             elm = get_elm_rows(evtids, vert_ak, start_row=chunk_row)
 
             for field in ["evtid", "n_rows", "start_row"]:
