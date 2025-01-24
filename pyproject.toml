@@ -37,6 +37,7 @@ dependencies = [
     "legend-pydataobj>=1.11.3",
     "legend-pygeom-optics>=0.6.5",
     "hist",
+    "dbetto",
     "particle",
     "pandas",
     "matplotlib",
