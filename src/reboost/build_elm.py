@@ -202,7 +202,7 @@ def build_elm(
     store = LH5Store()
 
     # loop over the lh5_tables
-    lh5_table_list = [table for table in lh5.ls(stp_file, "stp/") if "vertices" not in table]
+    lh5_table_list = [table for table in lh5.ls(stp_file, "stp/") if table != "stp/vertices"]
 
     # get rows in the table
     if elm_file is None:

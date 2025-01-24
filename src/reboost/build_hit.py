@@ -18,7 +18,9 @@ log = logging.getLogger(__name__)
 def build_hit(
     config: Mapping | str,
     args: Mapping | AttrsDict,
-    files: dict,
+    stp_files: list | str,
+    elm_files: list | str,
+    hit_files: list | str | None,
     *,
     start_evtid: int = 0,
     n_evtid: int | None = None,
@@ -188,9 +190,12 @@ def build_hit(
             first evtid to read.
         n_evtid
             number of evtid to read, if `None` read all.
-        files
-            dictionary of the files paths should contain three keys `stp`, `elm` and `hit`. Each
-            entry should be a list of files or a string. The `hit` file can also be `None` in which
+        stp_files
+            list of strings or string of the stp file path.
+        elm_files
+            list of strings or string of the elm file path.
+        hit_files
+            list of strings or string of the hit file path. The `hit` file can also be `None` in which
             case the hits are returned as an `ak.Array` in memory.
         in_field
             name of the input field in the remage output.
@@ -218,7 +223,8 @@ def build_hit(
     global_objects = utils.dict2tuple(global_objects_dict)
 
     # get the input files
-    for file_type, file_list in files.items():
+    files = {}
+    for file_type, file_list in zip(["stp", "elm", "hit"], [stp_files, elm_files, hit_files]):
         if isinstance(file_list, str):
             files[file_type] = list(file_list)
 
