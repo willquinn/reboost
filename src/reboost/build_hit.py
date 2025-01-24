@@ -197,7 +197,7 @@ def build_hit(
         out_field
             name of the output field
         buffer
-            buffer for use in the `LH5Iterator`.
+            buffer size for use in the `LH5Iterator`.
 
     """
 
@@ -314,6 +314,4 @@ def build_hit(
                             )
 
     # return output table or nothing
-    if output_table is not None:
-        return output_table
-    return None
+    return output_table

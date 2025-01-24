@@ -8,7 +8,7 @@ from lgdo.types import LGDO, Table
 
 from . import utils
 
-logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 def evaluate_expression(
