@@ -203,7 +203,6 @@ def build_hit(
             name of the output field
         buffer
             buffer size for use in the `LH5Iterator`.
-
     """
 
     # extract the config file

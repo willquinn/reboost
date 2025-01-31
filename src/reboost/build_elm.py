@@ -96,9 +96,10 @@ def get_stp_evtids(
     last_vertex_evtid: int,
     stp_buffer: int,
 ) -> tuple[int, int, ak.Array]:
-    """Extracts the rows of a stp file corresponding to a particular range of `evtid`.
-    The reading starts at `start_row` to allow for iterating through the file. The iteration
-    stops when the `evtid` being read is larger than `last_vertex_evtid`.
+    """Extracts the rows of a stp file corresponding to a particular range of
+    `evtid`. The reading starts at `start_row` to allow for iterating through
+    the file. The iteration stops when the `evtid` being read is larger than
+    `last_vertex_evtid`.
 
     Parameters
     ----------

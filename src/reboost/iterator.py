@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 
 class ELMIterator:
-    """A class to iterate over the rows of an event lookup map"""
+    """A class to iterate over the rows of an event lookup map."""
 
     def __init__(
         self,
@@ -42,7 +42,6 @@ class ELMIterator:
             whether to read also the vertices table.
         buffer
             the number of rows to read at once.
-
         """
 
         # initialise
