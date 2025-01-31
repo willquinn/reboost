@@ -72,7 +72,8 @@ class OpticalMap:
         return om
 
     def _prepare_hist(self) -> np.ndarray:
-        """Prepare an empty histogram with the parameters global to this map instance."""
+        """Prepare an empty histogram with the parameters global to this map
+        instance."""
         if self.use_shmem:
             assert mp.current_process().name == "MainProcess"
             a = self._mp_man.Array(ctypes.c_double, math.prod(self._single_shape))

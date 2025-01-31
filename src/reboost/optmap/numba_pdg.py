@@ -7,7 +7,7 @@ from numba import njit
 
 
 def numba_pdgid_funcs():
-    """load a numby-optimized copy of the scikit-hep/particle package"""
+    """Load a numby-optimized copy of the scikit-hep/particle package."""
     spec_pdg = importlib.util.find_spec("particle.pdgid.functions")
     pdg_func = importlib.util.module_from_spec(spec_pdg)
     spec_pdg.loader.exec_module(pdg_func)

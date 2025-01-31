@@ -97,7 +97,7 @@ def get_detectors_mapping(
 
 
 def get_detector_objects(output_detectors, proc_group, args, global_objects):
-    """Get the detector objects"""
+    """Get the detector objects."""
     det_objects_dict = {}
     for output_detector in output_detectors:
         det_objects_dict[output_detector] = utils.dict2tuple(
@@ -137,7 +137,7 @@ def evaluate_hit_table_layout(steps_ak: ak.Array, expression: str) -> Table:
 
 
 def remove_columns(tab: Table, outputs: list) -> Table:
-    """Remove columns from the table not found in the outputs
+    """Remove columns from the table not found in the outputs.
 
     Parameters
     ----------
