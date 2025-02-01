@@ -193,7 +193,7 @@ def build_hit(
     Parameters
     ----------
     config
-        dictionary or path to YAML file containing the processing chain. For example:
+        dictionary or path to YAML file containing the processing chain.
     args
         dictionary or :class:`legendmeta.AttrsDict` of the global arguments.
     stp_files
@@ -238,8 +238,7 @@ def build_hit(
         else:
             files[file_type] = file_list
 
-    output_table = None
-
+    output_tables = {}
     # iterate over files
     for file_idx, (stp_file, glm_file) in enumerate(zip(files["stp"], files["glm"])):
         msg = (
@@ -298,6 +297,8 @@ def build_hit(
 
                     for out_det_idx, out_detector in enumerate(out_detectors):
                         # loop over the rows
+                        if out_detector not in output_tables and files["hit"] is None:
+                            output_tables[out_detector] = None
 
                         hit_table = core.evaluate_hit_table_layout(
                             copy.deepcopy(ak_obj),
@@ -354,10 +355,14 @@ def build_hit(
                                 time_dict[proc_name].update_field("write", start_time)
 
                         else:
-                            output_table = core.merge(hit_table, output_table)
+                            output_tables[out_detector] = core.merge(
+                                hit_table, output_tables[out_detector]
+                            )
 
     # return output table or nothing
-
     log.info(time_dict)
 
-    return output_table, time_dict
+    if output_tables == {}:
+        output_tables = None
+
+    return output_tables, time_dict
