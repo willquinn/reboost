@@ -5,8 +5,14 @@ import pytest
 from lgdo import Array, Table, lh5
 
 from reboost.optmap.convolve import convolve
-from reboost.optmap.create import create_optical_maps, merge_optical_maps
+from reboost.optmap.create import (
+    check_optical_map,
+    create_optical_maps,
+    list_optical_maps,
+    merge_optical_maps,
+)
 from reboost.optmap.evt import build_optmap_evt
+from reboost.optmap.optmap import OpticalMap
 
 
 @pytest.fixture
@@ -204,3 +210,27 @@ def test_optmap_convolve(tbl_evt_fns, tbl_edep, tmp_path):
         output_file=out_fn,
         buffer_len=10,
     )
+
+
+@pytest.mark.filterwarnings("ignore::scipy.optimize._optimize.OptimizeWarning")
+def test_optmap_save_and_load(tmp_path, tbl_evt_fns):
+    settings = {
+        "range_in_m": [[0, 1], [0, 1], [0, 1]],
+        "bins": [10, 10, 10],
+    }
+
+    map_fn = str(tmp_path / "map.lh5")
+    create_optical_maps(
+        tbl_evt_fns,
+        settings,
+        chfilter=("001", "002", "003"),
+        output_lh5_fn=map_fn,
+    )
+
+    assert list_optical_maps(map_fn) == ["_001", "_002", "_003", "all"]
+    om = OpticalMap.load_from_file(map_fn, "all")
+    assert isinstance(om, OpticalMap)
+    om = OpticalMap.load_from_file(map_fn, "all")
+    assert isinstance(om, OpticalMap)
+
+    check_optical_map(map_fn)

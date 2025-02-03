@@ -65,10 +65,16 @@ class OpticalMap:
                 raise ValueError(msg)
             return h.weights.nda, h.binning
 
-        om.h_vertex, om.binning = read_hist("nr_gen", lh5_file, group=group)
-        om.h_hits, _ = read_hist("nr_det", lh5_file, group=group)
-        om.h_prob, _ = read_hist("p_det", lh5_file, group=group)
-        om.h_prob_uncert, _ = read_hist("p_det_err", lh5_file, group=group)
+        om.h_vertex, bin_nr_gen = read_hist("nr_gen", lh5_file, group=group)
+        om.h_hits, bin_nr_det = read_hist("nr_det", lh5_file, group=group)
+        om.h_prob, bin_p_det = read_hist("p_det", lh5_file, group=group)
+        om.h_prob_uncert, bin_p_det_err = read_hist("p_det_err", lh5_file, group=group)
+
+        for bins in (bin_nr_det, bin_p_det, bin_p_det_err):
+            if not OpticalMap._edges_eq(bin_nr_gen, bins):
+                pass
+
+        om.binning = bin_nr_gen
         return om
 
     def _prepare_hist(self) -> np.ndarray:
@@ -284,3 +290,17 @@ class OpticalMap:
                 low_stat_one / ncells * 100,
                 primaries_low_stats_th,
             )
+
+    @staticmethod
+    def _edges_eq(
+        e1: tuple[NDArray] | tuple[Histogram.Axis], e2: tuple[NDArray] | tuple[Histogram.Axis]
+    ) -> bool:
+        """Compare edge-tuples for two histograms."""
+        if isinstance(e1[0], Histogram.Axis):
+            e1 = tuple([b.edges for b in e1])
+        if isinstance(e2[0], Histogram.Axis):
+            e2 = tuple([b.edges for b in e2])
+        assert all(isinstance(b, np.ndarray) for b in e1)
+        assert all(isinstance(b, np.ndarray) for b in e2)
+
+        return len(e1) == len(e2) and all(np.all(x1 == x2) for x1, x2 in zip(e1, e2))
