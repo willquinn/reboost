@@ -285,9 +285,6 @@ def _merge_optical_maps_process(
     check_after_create: bool = False,
     write_part_file: bool = False,
 ) -> bool:
-    def _edges_eq(e1: tuple[NDArray], e2: tuple[NDArray]):
-        return len(e1) == len(e2) and all(np.all(x1 == x2) for x1, x2 in zip(e1, e2))
-
     log.info("merging optical map group: %s", d)
     merged_map = OpticalMap.create_empty(d, settings)
     merged_nr_gen = merged_map.h_vertex
@@ -300,13 +297,11 @@ def _merge_optical_maps_process(
         nr_gen = lh5.read(f"/{d}/nr_gen", optmap_fn)
         assert isinstance(nr_gen, Histogram)
 
-        optmap_edges = tuple([b.edges for b in nr_det.binning])
-        optmap_edges_gen = tuple([b.edges for b in nr_gen.binning])
-        assert _edges_eq(optmap_edges, optmap_edges_gen)
-        if all_edges is not None and not _edges_eq(optmap_edges, all_edges):
+        assert OpticalMap._edges_eq(nr_det.binning, nr_gen.binning)
+        if all_edges is not None and not OpticalMap._edges_eq(nr_det.binning, all_edges):
             msg = "edges of input optical maps differ"
             raise ValueError(msg)
-        all_edges = optmap_edges
+        all_edges = nr_det.binning
 
         # now that we validated that the map dimensions are equal, add up the actual data (in counts).
         merged_nr_det += nr_det.weights.nda
@@ -331,7 +326,7 @@ def merge_optical_maps(
     check_after_create: bool = False,
     n_procs: int | None = 1,
 ) -> None:
-    """Merge optical maps.
+    """Merge optical maps from multiple files.
 
     Parameters
     ----------
@@ -349,7 +344,6 @@ def merge_optical_maps(
 
     log.info("merging optical map groups: %s", ", ".join(all_det_ntuples))
 
-    n_procs = 10  # TODO: remove
     use_mp = (n_procs is None or n_procs > 1) and len(all_det_ntuples) > 1
 
     if not use_mp:
@@ -421,6 +415,20 @@ def merge_optical_maps(
 
 
 def check_optical_map(map_l5_file: str):
+    """Run a health check on the map file.
+
+    This checks for consistency, and output details on map statistics.
+    """
+    if lh5.read("_hitcounts_exp", lh5_file=map_l5_file).value != np.inf:
+        log.error("unexpected hitcount exp not equal to positive infinity")
+    if lh5.read("_hitcounts", lh5_file=map_l5_file).nda.shape != (2,):
+        log.error("unexpected hitcount shape")
+
+    all_binning = None
     for submap in list_optical_maps(map_l5_file):
-        # TODO: check submaps consistency
-        OpticalMap.load_from_file(map_l5_file, submap).check_histograms(include_prefix=True)
+        om = OpticalMap.load_from_file(map_l5_file, submap)
+        om.check_histograms(include_prefix=True)
+
+        if all_binning is not None and not OpticalMap._edges_eq(om.binning, all_binning):
+            log.error("edges of optical map %s differ", submap)
+        all_binning = om.binning
