@@ -5,9 +5,8 @@ import json
 import logging
 from pathlib import Path
 
-from utils import _check_input_file, _check_output_file
-
 from ..log_utils import setup_log
+from ..utils import _check_input_file, _check_output_file
 
 log = logging.getLogger(__name__)
 
