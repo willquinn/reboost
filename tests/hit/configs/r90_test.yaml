@@ -1,0 +1,18 @@
+processing_groups:
+  - name: geds
+
+    detector_mapping:
+      - output: det1
+
+    outputs:
+      - r90
+      - mean_x
+      - mean_y
+      - mean_z
+
+    hit_table_layout: reboost.shape.group.group_by_time(STEPS, window=10)
+
+    operations:
+      r90, mean_x, mean_y, mean_z:
+        reboost.heuristics.calculate_R90(HITS.edep, HITS.xloc, HITS.yloc,
+        HITS.zloc)
