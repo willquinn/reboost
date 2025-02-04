@@ -13,7 +13,9 @@ log = logging.getLogger(__name__)
 
 
 def get_file_dict(
-    stp_files: list | str, glm_files: list | str, hit_files: list | str | None = None
+    stp_files: list[str] | str,
+    glm_files: list[str] | str,
+    hit_files: list[str] | str | None = None,
 ) -> AttrsDict:
     """Get the file info as a AttrsDict."""
     files = {}
