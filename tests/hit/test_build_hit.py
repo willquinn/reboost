@@ -22,7 +22,6 @@ def tmptestdir():
     return _tmptestdir
 
 
-@pytest.fixture(scope="session")
 def test_gen_lh5(tmptestdir):
     # write a basic lh5 file
 
@@ -41,20 +40,17 @@ def test_gen_lh5(tmptestdir):
 
     build_glm(str(tmptestdir / "basic.lh5"), str(tmptestdir / "basic_glm.lh5"), id_name="evtid")
 
-    return str(tmptestdir)
 
-
-@pytest.fixture(scope="session")
-def test_basic(test_gen_lh5):
+def test_basic(tmptestdir):
     reboost.build_hit.build_hit(
         f"{Path(__file__).parent}/configs/basic.yaml",
         args={},
-        stp_files=f"{test_gen_lh5}/basic.lh5",
-        glm_files=f"{test_gen_lh5}/basic_glm.lh5",
-        hit_files=f"{test_gen_lh5}/basic_hit.lh5",
+        stp_files=f"{tmptestdir}/basic.lh5",
+        glm_files=f"{tmptestdir}/basic_glm.lh5",
+        hit_files=f"{tmptestdir}/basic_hit.lh5",
     )
 
-    hits = lh5.read("det1/hit", f"{test_gen_lh5}/basic_hit.lh5").view_as("ak")
+    hits = lh5.read("det1/hit", f"{tmptestdir}/basic_hit.lh5").view_as("ak")
 
     assert ak.all(hits.energy == [300, 330])
     assert ak.all(hits.t0 == [0, 0.1])
@@ -66,8 +62,8 @@ def test_basic(test_gen_lh5):
     hits, time_dict = reboost.build_hit.build_hit(
         f"{Path(__file__).parent}/configs/basic.yaml",
         args={},
-        stp_files=f"{test_gen_lh5}/basic.lh5",
-        glm_files=f"{test_gen_lh5}/basic_glm.lh5",
+        stp_files=f"{tmptestdir}/basic.lh5",
+        glm_files=f"{tmptestdir}/basic_glm.lh5",
         hit_files=None,
     )
 
@@ -87,7 +83,6 @@ def test_basic(test_gen_lh5):
     assert list(time_dict["geds"]["expressions"].keys()) == ["t0", "first_evtid", "energy"]
 
 
-@pytest.fixture(scope="session")
 def test_full_chain(tmptestdir):
     build_glm(
         f"{Path(__file__).parent}/test_files/beta_small.lh5",
