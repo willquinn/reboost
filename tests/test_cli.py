@@ -44,11 +44,4 @@ def test_cli(tmp_path):
     )
 
     hit1 = lh5.read("det001/hit", f"{tmp_path}/hit.lh5").view_as("ak")
-    assert hit1.fields == [
-        "evtid",
-        "t0",
-        "evtid",
-        "truth_energy",
-        "active_energy",
-        "smeared_energy",
-    ]
+    assert hit1.fields == ["evtid", "t0", "truth_energy", "active_energy", "smeared_energy"]
