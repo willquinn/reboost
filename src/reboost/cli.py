@@ -50,14 +50,14 @@ def cli() -> None:
 
     # optional args
     glm_parser.add_argument(
-        "--out_table_name", "-n", type=str, default="glm", help="Output table name."
+        "--out-table-name", "-n", type=str, default="glm", help="Output table name."
     )
     glm_parser.add_argument("--id-name", "-i", type=str, default="g4_evtid", help="ID column name.")
     glm_parser.add_argument(
-        "--evtid_buffer", "-e", type=int, default=int(1e7), help="event id buffer size."
+        "--evtid-buffer", "-e", type=int, default=int(1e7), help="event id buffer size."
     )
     glm_parser.add_argument(
-        "--stp_buffer", "-b", type=int, default=int(1e7), help="stp buffer size."
+        "--stp-buffer", "-b", type=int, default=int(1e7), help="stp buffer size."
     )
     glm_parser.add_argument(
         "--overwrite", "-w", action="store_true", help="Overwrite the input file if it exists."
