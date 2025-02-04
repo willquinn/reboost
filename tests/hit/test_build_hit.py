@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import uuid
+from getpass import getuser
 from pathlib import Path
+from tempfile import gettempdir
 
 import awkward as ak
 import dbetto
@@ -10,9 +13,17 @@ from lgdo import Array, Table, lh5
 import reboost
 from reboost.build_glm import build_glm
 
+_tmptestdir = Path(gettempdir()) / Path(f"reboost-tests-{getuser()}-{uuid.uuid4()!s}")
 
-@pytest.fixture
-def test_gen_lh5(tmp_path):
+
+@pytest.fixture(scope="session")
+def tmptestdir():
+    Path.mkdir(_tmptestdir)
+    return _tmptestdir
+
+
+@pytest.fixture(scope="session")
+def test_gen_lh5(tmptestdir):
     # write a basic lh5 file
 
     evtid = [0, 0, 1, 1, 1]
@@ -20,19 +31,20 @@ def test_gen_lh5(tmp_path):
     time = [0, 1.5, 0.1, 2.1, 3.7]  # ns
     vertices = [0, 1]
     tab = Table({"evtid": Array(evtid), "edep": Array(edep), "time": Array(time)})
-    lh5.write(tab, "stp/det1", str(tmp_path / "basic.lh5"), wo_mode="of")
+    lh5.write(tab, "stp/det1", str(tmptestdir / "basic.lh5"), wo_mode="of")
     lh5.write(
         Table({"evtid": Array(vertices)}),
         "stp/vertices",
-        str(tmp_path / "basic.lh5"),
+        str(tmptestdir / "basic.lh5"),
         wo_mode="append",
     )
 
-    build_glm(str(tmp_path / "basic.lh5"), str(tmp_path / "basic_glm.lh5"), id_name="evtid")
+    build_glm(str(tmptestdir / "basic.lh5"), str(tmptestdir / "basic_glm.lh5"), id_name="evtid")
 
-    return str(tmp_path)
+    return str(tmptestdir)
 
 
+@pytest.fixture(scope="session")
 def test_basic(test_gen_lh5):
     reboost.build_hit.build_hit(
         f"{Path(__file__).parent}/configs/basic.yaml",
@@ -75,10 +87,11 @@ def test_basic(test_gen_lh5):
     assert list(time_dict["geds"]["expressions"].keys()) == ["t0", "first_evtid", "energy"]
 
 
-def test_full_chain(tmp_path):
+@pytest.fixture(scope="session")
+def test_full_chain(tmptestdir):
     build_glm(
         f"{Path(__file__).parent}/test_files/beta_small.lh5",
-        str(tmp_path / "beta_small_glm.lh5"),
+        str(tmptestdir / "beta_small_glm.lh5"),
         id_name="evtid",
     )
 
@@ -93,7 +106,7 @@ def test_full_chain(tmp_path):
         f"{Path(__file__).parent}/configs/hit_config.yaml",
         args=args,
         stp_files=f"{Path(__file__).parent}/test_files/beta_small.lh5",
-        glm_files=str(tmp_path / "beta_small_glm.lh5"),
+        glm_files=str(tmptestdir / "beta_small_glm.lh5"),
         hit_files=None,
     )
     assert hits["det001"].fields == [

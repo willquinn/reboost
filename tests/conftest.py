@@ -1,6 +1,26 @@
 from __future__ import annotations
 
+import shutil
+import uuid
+from getpass import getuser
+from pathlib import Path
+from tempfile import gettempdir
+
 import numba
+import pytest
+
+_tmptestdir = Path(gettempdir()) / Path(f"reboost-tests-{getuser()}-{uuid.uuid4()!s}")
+
+
+@pytest.fixture(scope="session")
+def tmptestdir():
+    Path.mkdir(_tmptestdir)
+    return _tmptestdir
+
+
+def pytest_sessionfinish(exitstatus):
+    if exitstatus == 0 and Path.exists(_tmptestdir):
+        shutil.rmtree(_tmptestdir)
 
 
 def patch_numba_for_tests():

@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from collections.abc import Iterable
 from pathlib import Path
 
 from ..log_utils import setup_log
+from ..utils import _check_input_file, _check_output_file
 
 log = logging.getLogger(__name__)
 
@@ -261,15 +261,3 @@ def optical_cli() -> None:
         _check_input_file(parser, [args.map, args.edep])
         _check_output_file(parser, args.output)
         convolve(args.map, args.edep, args.edep_lgdo, args.material, args.output, args.bufsize)
-
-
-def _check_input_file(parser, file: str | Iterable[str], descr: str = "input"):
-    file = (file,) if isinstance(file, str) else file
-    not_existing = [f for f in file if not Path(f).exists()]
-    if not_existing != []:
-        parser.error(f"{descr} file(s) {''.join(not_existing)} missing")
-
-
-def _check_output_file(parser, file: str):
-    if Path(file).exists():
-        parser.error(f"output file {file} already exists")

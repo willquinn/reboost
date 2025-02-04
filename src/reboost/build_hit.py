@@ -178,9 +178,9 @@ log = logging.getLogger(__name__)
 def build_hit(
     config: Mapping | str,
     args: Mapping | AttrsDict,
-    stp_files: list | str,
-    glm_files: list | str,
-    hit_files: list | str | None,
+    stp_files: str | list[str],
+    glm_files: str | list[str],
+    hit_files: str | list[str] | None,
     *,
     start_evtid: int = 0,
     n_evtid: int | None = None,
@@ -231,19 +231,14 @@ def build_hit(
     )
 
     # get the input files
-    files = {}
-    for file_type, file_list in zip(["stp", "glm", "hit"], [stp_files, glm_files, hit_files]):
-        if isinstance(file_list, str):
-            files[file_type] = [file_list]
-        else:
-            files[file_type] = file_list
+    files = utils.get_file_dict(stp_files=stp_files, glm_files=glm_files, hit_files=hit_files)
 
     output_tables = {}
     # iterate over files
-    for file_idx, (stp_file, glm_file) in enumerate(zip(files["stp"], files["glm"])):
+    for file_idx, (stp_file, glm_file) in enumerate(zip(files.stp, files.glm)):
         msg = (
-            f"... starting post processing of {stp_file} to {files['hit'][file_idx]} "
-            if files["hit"] is not None
+            f"... starting post processing of {stp_file} to {files.hit[file_idx]} "
+            if files.hit is not None
             else f"... starting post processing of {stp_file}"
         )
         log.info(msg)
@@ -252,6 +247,7 @@ def build_hit(
         for group_idx, proc_group in enumerate(config["processing_groups"]):
             proc_name = proc_group.get("name", "default")
             time_dict[proc_name] = ProfileDict()
+
             # extract the output detectors and the mapping to input detectors
             detectors_mapping = utils.merge_dicts(
                 [
@@ -297,7 +293,7 @@ def build_hit(
 
                     for out_det_idx, out_detector in enumerate(out_detectors):
                         # loop over the rows
-                        if out_detector not in output_tables and files["hit"] is None:
+                        if out_detector not in output_tables and files.hit is None:
                             output_tables[out_detector] = None
 
                         hit_table = core.evaluate_hit_table_layout(
@@ -341,14 +337,14 @@ def build_hit(
                         )
 
                         # now write
-                        if files["hit"] is not None:
+                        if files.hit is not None:
                             if time_dict is not None:
                                 start_time = time.time()
 
                             lh5.write(
                                 hit_table,
                                 f"{out_detector}/{out_field}",
-                                files["hit"][file_idx],
+                                files.hit[file_idx],
                                 wo_mode=wo_mode,
                             )
                             if time_dict is not None:
