@@ -19,7 +19,6 @@ def tmptestdir():
     return _tmptestdir
 
 
-@pytest.fixture(scope="session")
 def test_cli(tmptestdir):
     # cli for build_glm
 

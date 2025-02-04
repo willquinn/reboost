@@ -64,7 +64,6 @@ def test_get_glm_rows():
 
 
 # create some example inputs
-@pytest.fixture(scope="session")
 def test_data_files(tmptestdir):
     rng = np.random.default_rng()
 
@@ -90,10 +89,8 @@ def test_data_files(tmptestdir):
 
     lh5.write(Table(steps_1), "stp/det1", tmptestdir / "gaps_test.lh5", wo_mode="append")
     lh5.write(Table(steps_2), "stp/det2", tmptestdir / "gaps_test.lh5", wo_mode="append")
-    return tmptestdir
 
 
-@pytest.fixture(scope="session")
 def test_read_stp_rows(tmptestdir):
     # check reading from the start everything
     start_row, chunk_start, evtids = get_stp_evtids(
@@ -153,7 +150,6 @@ def test_read_stp_rows(tmptestdir):
     assert start_row == 21050
 
 
-@pytest.fixture(scope="session")
 def test_build_glm(tmptestdir):
     # produce directly glm without iteration
     # try with different buffers
@@ -189,7 +185,6 @@ def test_build_glm(tmptestdir):
                 assert np.sum(glm.det2.n_rows) == len(evtids2_read)
 
 
-@pytest.fixture(scope="session")
 def test_glm_iterator(tmptestdir):
     # make an glm
 
