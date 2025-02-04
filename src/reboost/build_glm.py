@@ -176,8 +176,8 @@ def get_stp_evtids(
 
 
 def build_glm(
-    stp_files: str,
-    glm_files: str | None,
+    stp_files: str | list[str],
+    glm_files: str | list[str] | None,
     *,
     out_table_name: str = "glm",
     id_name: str = "g4_evtid",

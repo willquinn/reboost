@@ -178,9 +178,9 @@ log = logging.getLogger(__name__)
 def build_hit(
     config: Mapping | str,
     args: Mapping | AttrsDict,
-    stp_files: list | str,
-    glm_files: list | str,
-    hit_files: list | str | None,
+    stp_files: str | list[str],
+    glm_files: str | list[str],
+    hit_files: str | list[str] | None,
     *,
     start_evtid: int = 0,
     n_evtid: int | None = None,

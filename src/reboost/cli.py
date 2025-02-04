@@ -34,14 +34,14 @@ def cli() -> None:
     glm_parser = subparsers.add_parser("build-glm", help="build glm file from remage stp file")
 
     glm_parser.add_argument(
-        "--stp_file",
+        "--stp-file",
         "-s",
         required=True,
         type=str,
         help="Path to the stp file, if multithreaded this will be appended with _t$idx.",
     )
     glm_parser.add_argument(
-        "--glm_file",
+        "--glm-file",
         "-g",
         required=True,
         type=str,
@@ -52,7 +52,7 @@ def cli() -> None:
     glm_parser.add_argument(
         "--out_table_name", "-n", type=str, default="glm", help="Output table name."
     )
-    glm_parser.add_argument("--id_name", "-i", type=str, default="g4_evtid", help="ID column name.")
+    glm_parser.add_argument("--id-name", "-i", type=str, default="g4_evtid", help="ID column name.")
     glm_parser.add_argument(
         "--evtid_buffer", "-e", type=int, default=int(1e7), help="event id buffer size."
     )
@@ -79,19 +79,19 @@ def cli() -> None:
     )
     hit_parser.add_argument("--args", type=str, required=True, help="Path to args file.")
     hit_parser.add_argument(
-        "--stp_file",
+        "--stp-file",
         type=str,
         required=True,
         help="stp file to process, if multithreaded this will be appended with _t$idx",
     )
     hit_parser.add_argument(
-        "--glm_file",
+        "--glm-file",
         type=str,
         required=True,
         help="glm file to process, if multithreaded this will be appended with _t$idx",
     )
     hit_parser.add_argument(
-        "--hit_file",
+        "--hit-file",
         type=str,
         required=True,
         help="hit file to produce, if multithreaded this will be appended with _t$idx",
