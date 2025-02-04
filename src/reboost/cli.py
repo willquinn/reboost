@@ -14,10 +14,11 @@ from .log_utils import setup_log
 log = logging.getLogger(__name__)
 
 
-def cli() -> None:
+def cli(args=None) -> None:
     parser = argparse.ArgumentParser(
         prog="reboost",
         description="%(prog)s command line interface",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
 
     parser.add_argument(
@@ -118,7 +119,7 @@ def cli() -> None:
         help="Number of threads used for remage",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     log_level = (None, logging.INFO, logging.DEBUG)[min(args.verbose, 2)]
     setup_log(log_level)
