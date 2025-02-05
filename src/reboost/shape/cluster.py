@@ -30,9 +30,15 @@ def cluster_by_sorted_field(
     -------
     A VectorOfVectors with the clustered field, an additional axis is present due to the clustering
     """
+    if isinstance(cluster_variable, VectorOfVectors):
+        cluster_variable = cluster_variable.view_as("ak")
+
+    if isinstance(field, VectorOfVectors):
+        field = cluster_variable.view_as("ak")
+
     counts = ak.run_lengths(cluster_variable)
 
     n_cluster = ak.num(counts, axis=-1)
     clusters = ak.unflatten(ak.flatten(field), ak.flatten(counts))
 
-    return VectorOfVectors(ak.unflatten(clusters, n_cluster))
+    return ak.unflatten(clusters, n_cluster)
