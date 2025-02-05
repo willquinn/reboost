@@ -51,47 +51,45 @@ def test_get_glm_rows():
 
 
 # create some example inputs
-@pytest.fixture
-def test_data_files(tmp_path):
+def test_data_files(tmptestdir):
     rng = np.random.default_rng()
 
     # simple every evtid in vertices
     vertex_evtid = ak.Array({"evtid": np.arange(10000)})
-    lh5.write(Table(vertex_evtid), "stp/vertices", tmp_path / "simple_test.lh5", wo_mode="of")
+    lh5.write(Table(vertex_evtid), "stp/vertices", tmptestdir / "simple_test.lh5", wo_mode="of")
 
     # make some simple stp file
     steps_1 = ak.Array({"evtid": np.sort(rng.integers(0, 10000, size=21082))})
     steps_2 = ak.Array({"evtid": np.sort(rng.integers(0, 1000, size=1069))})
 
-    lh5.write(Table(steps_1), "stp/det1", tmp_path / "simple_test.lh5", wo_mode="append")
-    lh5.write(Table(steps_2), "stp/det2", tmp_path / "simple_test.lh5", wo_mode="append")
+    lh5.write(Table(steps_1), "stp/det1", tmptestdir / "simple_test.lh5", wo_mode="append")
+    lh5.write(Table(steps_2), "stp/det2", tmptestdir / "simple_test.lh5", wo_mode="append")
 
     # file with some gaps (multithreaded mode)
 
     vertex_evtid = ak.Array({"evtid": np.sort(np.unique(rng.integers(0, 200000, size=10000)))})
-    lh5.write(Table(vertex_evtid), "stp/vertices", tmp_path / "gaps_test.lh5", wo_mode="of")
+    lh5.write(Table(vertex_evtid), "stp/vertices", tmptestdir / "gaps_test.lh5", wo_mode="of")
 
     # make some simple stp file
     steps_1 = ak.Array({"evtid": np.sort(rng.choice(vertex_evtid.evtid, size=21082))})
     steps_2 = ak.Array({"evtid": np.sort(rng.choice(vertex_evtid.evtid, size=1069))})
 
-    lh5.write(Table(steps_1), "stp/det1", tmp_path / "gaps_test.lh5", wo_mode="append")
-    lh5.write(Table(steps_2), "stp/det2", tmp_path / "gaps_test.lh5", wo_mode="append")
-    return tmp_path
+    lh5.write(Table(steps_1), "stp/det1", tmptestdir / "gaps_test.lh5", wo_mode="append")
+    lh5.write(Table(steps_2), "stp/det2", tmptestdir / "gaps_test.lh5", wo_mode="append")
 
 
-def test_read_stp_rows(test_data_files):
+def test_read_stp_rows(tmptestdir):
     # check reading from the start everything
     start_row, chunk_start, evtids = get_stp_evtids(
         "stp/det1",
-        str(test_data_files / "simple_test.lh5"),
+        str(tmptestdir / "simple_test.lh5"),
         "evtid",
         start_row=0,
         last_vertex_evtid=10000,
         stp_buffer=1000,
     )
     # read the evtid directly to compare
-    evtids_read = lh5.read_as("stp/det1/evtid", str(test_data_files / "simple_test.lh5"), "np")
+    evtids_read = lh5.read_as("stp/det1/evtid", str(tmptestdir / "simple_test.lh5"), "np")
     assert chunk_start == 0
     assert np.all(evtids == evtids_read)
 
@@ -100,7 +98,7 @@ def test_read_stp_rows(test_data_files):
     index = sum(evtids_read < 1200)
     start_row, chunk_start, evtids = get_stp_evtids(
         "stp/det1",
-        str(test_data_files / "simple_test.lh5"),
+        str(tmptestdir / "simple_test.lh5"),
         "evtid",
         start_row=0,
         last_vertex_evtid=1200,
@@ -115,7 +113,7 @@ def test_read_stp_rows(test_data_files):
 
     start_row, chunk_start, evtids = get_stp_evtids(
         "stp/det1",
-        str(test_data_files / "simple_test.lh5"),
+        str(tmptestdir / "simple_test.lh5"),
         "evtid",
         start_row=300,
         last_vertex_evtid=10000,
@@ -129,7 +127,7 @@ def test_read_stp_rows(test_data_files):
 
     start_row, chunk_start, evtids = get_stp_evtids(
         "stp/det1",
-        str(test_data_files / "simple_test.lh5"),
+        str(tmptestdir / "simple_test.lh5"),
         "evtid",
         start_row=21050,
         last_vertex_evtid=10000,
@@ -139,27 +137,21 @@ def test_read_stp_rows(test_data_files):
     assert start_row == 21050
 
 
-def test_build_glm(test_data_files):
+def test_build_glm(tmptestdir):
     # produce directly glm without iteration
     # try with different buffers
 
     for buffer in [71, 100, 1000, 2000, 40000]:
         # two files (no gaps and gaps)
         for test in ["simple", "gaps"]:
-            evtids = lh5.read_as(
-                "stp/vertices/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
-            )
+            evtids = lh5.read_as("stp/vertices/evtid", str(tmptestdir / f"{test}_test.lh5"), "np")
 
-            evtids1_read = lh5.read_as(
-                "stp/det1/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
-            )
-            evtids2_read = lh5.read_as(
-                "stp/det2/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
-            )
+            evtids1_read = lh5.read_as("stp/det1/evtid", str(tmptestdir / f"{test}_test.lh5"), "np")
+            evtids2_read = lh5.read_as("stp/det2/evtid", str(tmptestdir / f"{test}_test.lh5"), "np")
             # check both returning and saving
-            for glm_file in [str(test_data_files / f"{test}_glm.lh5"), None]:
+            for glm_file in [str(tmptestdir / f"{test}_glm.lh5"), None]:
                 glm = build_glm(
-                    str(test_data_files / f"{test}_test.lh5"),
+                    str(tmptestdir / f"{test}_test.lh5"),
                     glm_file,
                     id_name="evtid",
                     evtid_buffer=1000,
@@ -180,13 +172,13 @@ def test_build_glm(test_data_files):
                 assert np.sum(glm.det2.n_rows) == len(evtids2_read)
 
 
-def test_glm_iterator(test_data_files):
+def test_glm_iterator(tmptestdir):
     # make an glm
 
     # two files (no gaps and gaps)
     for test in ["simple", "gaps"]:
-        stp_file = str(test_data_files / f"{test}_test.lh5")
-        glm_file = str(test_data_files / f"{test}_glm.lh5")
+        stp_file = str(tmptestdir / f"{test}_test.lh5")
+        glm_file = str(tmptestdir / f"{test}_glm.lh5")
 
         build_glm(
             stp_file,
@@ -223,7 +215,7 @@ def test_glm_iterator(test_data_files):
                     )
 
                 evtids_read = lh5.read_as(
-                    f"stp/{det}/evtid", str(test_data_files / f"{test}_test.lh5"), "np"
+                    f"stp/{det}/evtid", str(tmptestdir / f"{test}_test.lh5"), "np"
                 )
 
                 assert ak.all(evtids == evtids_read)

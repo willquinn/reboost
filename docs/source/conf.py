@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from pkg_resources import get_distribution
+from sphinx.ext.napoleon.docstring import GoogleDocstring, NumpyDocstring
 
 sys.path.insert(0, Path(__file__).parents[2].resolve().as_posix())
 
@@ -46,18 +47,25 @@ napoleon_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_use_ivar = True
 
+# fix napoleon "Returns" section to not need an actual type.
+NumpyDocstring._consume_returns_section = GoogleDocstring._consume_returns_section
+
 # intersphinx
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
-    "numpy": ("http://docs.scipy.org/doc/numpy", None),
-    "scipy": ("http://docs.scipy.org/doc/scipy/reference", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
     "pandas": ("https://pandas.pydata.org/docs", None),
-    "matplotlib": ("http://matplotlib.org/stable", None),
+    "matplotlib": ("https://matplotlib.org/stable", None),
+    "pint": ("https://pint.readthedocs.io/en/stable", None),
+    "pyg4ometry": ("https://pyg4ometry.readthedocs.io/en/stable", None),
+    "legendmeta": ("https://pylegendmeta.readthedocs.io/en/stable/", None),
+    "lgdo": ("https://legend-pydataobj.readthedocs.io/en/stable/", None),
 }  # add new intersphinx mappings here
 
 # sphinx-autodoc
 # Include __init__() docstring in class docstring
 autoclass_content = "both"
 autodoc_typehints = "description"
-autodoc_typehints_description_target = "documented_params"
+autodoc_typehints_description_target = "all"
 autodoc_typehints_format = "short"

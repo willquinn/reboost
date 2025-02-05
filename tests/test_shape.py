@@ -5,7 +5,7 @@ import numpy as np
 from lgdo import Table
 
 import reboost
-from reboost.shape import group
+from reboost.shape import cluster, group
 
 
 def test_evtid_group():
@@ -91,3 +91,28 @@ def test_time_group():
             [3000, 3100],
         ]
     )
+
+
+def test_cluster_basic():
+    trackid = ak.Array([[1, 1, 1, 2, 2, 3, 3, 7], [2, 2, 2, 3, 3, 3], [1]])
+
+    assert ak.all(
+        cluster.cluster_by_sorted_field(trackid, trackid).view_as("ak")
+        == ak.Array([[[1, 1, 1], [2, 2], [3, 3], [7]], [[2, 2, 2], [3, 3, 3]], [[1]]])
+    )
+
+
+def test_step_length():
+    trackid = ak.Array([[1, 1, 1, 2, 2, 3, 3, 7], [2, 2, 2, 3, 3, 3], [1]])
+    x = ak.Array([[0, 0, 1, 1, 2, 2, 3, 4], [0, 1, 4, 5, 5, 6], [0]])
+    y = ak.Array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0]])
+    z = ak.Array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0]])
+
+    x_cluster = cluster.cluster_by_sorted_field(trackid, x).view_as("ak")
+    y_cluster = cluster.cluster_by_sorted_field(trackid, y).view_as("ak")
+    z_cluster = cluster.cluster_by_sorted_field(trackid, z).view_as("ak")
+
+    steps = cluster.step_lengths(x_cluster, y_cluster, z_cluster).view_as("ak")
+
+    for idx, sub_array in enumerate(steps):
+        assert ak.all(sub_array == ak.Array([[[0, 1], [1], [1], []], [[1, 3], [0, 1.0]], []])[idx])
