@@ -4,18 +4,16 @@ import logging
 
 import awkward as ak
 import numpy as np
+from lgdo import Array
 
 log = logging.getLogger(__name__)
-
-
-numpyarray = ak.contents.NumpyArray
 
 
 def cumsum(layout, **kwargs):
     _ = kwargs  # Ignore unused kwargs
 
     if layout.is_numpy:
-        return numpyarray(np.cumsum(layout.data))  # ✅ Uses alias
+        return ak.contents.NumpyArray(np.cumsum(layout.data))
 
     return None
 
@@ -65,9 +63,9 @@ def calculate_R90(edep: np.ndarray, xloc: np.ndarray, yloc: np.ndarray, zloc: np
     c = b[1:] - b[:-1, -1]
     cumsum_edep = ak.concatenate([b[:1], c])
     threshold = 0.9 * tot_energy
-    r90_indices = ak.argmax(cumsum_edep >= threshold, axis=-1)
+    r90_indices = ak.argmax(cumsum_edep >= threshold, axis=-1, keepdims=True)
 
     # Extract R90 distances
     r90 = sorted_dist[r90_indices]
 
-    return r90, mean_x[:, 0], mean_y[:, 0], mean_z[:, 0]
+    return Array(ak.flatten(r90))

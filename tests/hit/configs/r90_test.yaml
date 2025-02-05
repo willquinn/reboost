@@ -6,13 +6,12 @@ processing_groups:
 
     outputs:
       - r90
-      - mean_x
-      - mean_y
-      - mean_z
+      - Esum
 
     hit_table_layout: reboost.shape.group.group_by_time(STEPS, window=10)
 
     operations:
-      r90, mean_x, mean_y, mean_z:
+      Esum: ak.sum(HITS.edep, axis=-1)
+      r90:
         reboost.heuristics.calculate_R90(HITS.edep, HITS.xloc, HITS.yloc,
         HITS.zloc)
