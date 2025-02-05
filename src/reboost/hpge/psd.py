@@ -9,7 +9,7 @@ from lgdo import Array
 log = logging.getLogger(__name__)
 
 
-def r90(edep: np.ndarray, xloc: np.ndarray, yloc: np.ndarray, zloc: np.ndarray):
+def r90(edep: ak.Array, xloc: ak.Array, yloc: ak.Array, zloc: ak.Array) -> Array:
     """Computes R90 for each hit in a ged.
 
     Parameters
