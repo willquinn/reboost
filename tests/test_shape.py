@@ -5,7 +5,7 @@ import numpy as np
 from lgdo import Table
 
 import reboost
-from reboost.shape import group
+from reboost.shape import cluster, group
 
 
 def test_evtid_group():
@@ -90,4 +90,13 @@ def test_time_group():
             [150, 151, 152],
             [3000, 3100],
         ]
+    )
+
+
+def test_cluster_basic():
+    trackid = ak.Array([[1, 1, 1, 2, 2, 3, 3, 7], [2, 2, 2, 3, 3, 3], [1]])
+
+    assert ak.all(
+        cluster.cluster_by_sorted_field(trackid, trackid).view_as("ak")
+        == ak.Array([[[1, 1, 1], [2, 2], [3, 3], [7]], [[2, 2, 2], [3, 3, 3]], [[1]]])
     )
