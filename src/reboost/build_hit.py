@@ -246,7 +246,9 @@ def build_hit(
         # loop over processing groups
         for group_idx, proc_group in enumerate(config["processing_groups"]):
             proc_name = proc_group.get("name", "default")
-            time_dict[proc_name] = ProfileDict()
+
+            if proc_name not in time_dict:
+                time_dict[proc_name] = ProfileDict()
 
             # extract the output detectors and the mapping to input detectors
             detectors_mapping = utils.merge_dicts(
