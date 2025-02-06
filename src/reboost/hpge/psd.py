@@ -50,9 +50,9 @@ def r90(edep: ak.Array, xloc: ak.Array, yloc: ak.Array, zloc: ak.Array) -> Array
     sorted_dist = dist[sorted_indices]
     sorted_edep = edep[sorted_indices]
 
-    def cumsum(layout, **kwargs):  # noqa: ARG001
+    def cumsum(layout, **_kwargs):
         if layout.is_numpy:
-            return ak.contents.NumpyArray(np.cumsum(layout.data))  # noqa: disallow-caps
+            return ak.contents.NumpyArray(np.cumsum(layout.data))
 
         return None
 
