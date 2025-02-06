@@ -29,21 +29,15 @@ def r90(edep: ak.Array, xloc: ak.Array, yloc: ak.Array, zloc: ak.Array) -> Array
     """
     tot_energy = ak.sum(edep, axis=-1, keepdims=True)
 
-    # Compute energy-weighted mean positions
-    mean_x = ak.sum(edep * xloc, axis=-1, keepdims=True) / tot_energy
-    mean_y = ak.sum(edep * yloc, axis=-1, keepdims=True) / tot_energy
-    mean_z = ak.sum(edep * zloc, axis=-1, keepdims=True) / tot_energy
-
-    xdiff = xloc - mean_x
-    ydiff = yloc - mean_y
-    zdiff = zloc - mean_z
-
-    xdiff = xdiff * xdiff
-    ydiff = ydiff * ydiff
-    zdiff = zdiff * zdiff
+    def eweight_mean(field, energy):
+        return ak.sum(energy * field, axis=-1, keepdims=True) / tot_energy
 
     # Compute distance of each edep to the weighted mean
-    dist = np.sqrt(xdiff + ydiff + zdiff)
+    dist = np.sqrt(
+        (xloc - eweight_mean(edep, xloc)) ** 2
+        + (yloc - eweight_mean(edep, yloc)) ** 2
+        + (zloc - eweight_mean(edep, zloc)) ** 2
+    )
 
     # Sort distances and corresponding edep within each event
     sorted_indices = ak.argsort(dist, axis=-1)
