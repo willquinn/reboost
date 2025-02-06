@@ -118,7 +118,3 @@ def test_r90():
 
     assert round(r90_output.nda[0], 7) == elect_r90
     assert round(r90_output.nda[1], 7) == gamma_r90
-
-
-if __name__ == "__main__":
-    test_r90()
