@@ -25,8 +25,11 @@ def _sort_data(obj: ak.Array, *, time_name: str = "time", evtid_name: str = "evt
     -------
     sorted awkward array
     """
-    indices = np.lexsort((obj[time_name], obj[evtid_name]))
-    return obj[indices]
+    obj_unflat = ak.unflatten(obj, ak.run_lengths(obj[evtid_name]))
+    indices = ak.argsort(obj_unflat[time_name], axis=-1)
+    sorted_obj = obj_unflat[indices]
+
+    return ak.flatten(sorted_obj)
 
 
 def group_by_evtid(data: Table | ak.Array, *, evtid_name: str = "evtid") -> Table:
