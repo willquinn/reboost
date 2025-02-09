@@ -103,7 +103,7 @@ def test_cluster_basic():
     )
 
 
-def cluster_by_step_length():
+def test_cluster_by_step_length():
     trackid = ak.Array([[1, 1, 1, 2, 2, 2, 2, 2], [2, 2, 2, 3, 3, 3], [1]])
     x = ak.Array([[0, 0, 0.5, 1, 2, 2.01, 2.02, 4], [0, 1, 4, 5, 5, 6], [0]])
     y = ak.Array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0]])
@@ -114,7 +114,7 @@ def cluster_by_step_length():
         trackid, x, y, z, dist, threshold=0.2, threshold_surf=0.2, surf_cut=0.05
     )
 
-    assert ak.all(clusters == ak.Array([[2, 1, 1, 3, 1], [1, 1, 1, 2, 1], [1]]))
+    assert ak.all(clusters.view_as("ak") == ak.Array([[2, 1, 1, 3, 1], [1, 1, 1, 2, 1], [1]]))
 
 
 def test_step_length():
@@ -123,9 +123,11 @@ def test_step_length():
     y = ak.Array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0]])
     z = ak.Array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0]])
 
-    x_cluster = cluster.cluster_by_sorted_field(trackid, x).view_as("ak")
-    y_cluster = cluster.cluster_by_sorted_field(trackid, y).view_as("ak")
-    z_cluster = cluster.cluster_by_sorted_field(trackid, z).view_as("ak")
+    run = ak.run_lengths(trackid)
+
+    x_cluster = cluster.apply_cluster(run, x).view_as("ak")
+    y_cluster = cluster.apply_cluster(run, y).view_as("ak")
+    z_cluster = cluster.apply_cluster(run, z).view_as("ak")
 
     steps = cluster.step_lengths(x_cluster, y_cluster, z_cluster).view_as("ak")
 
