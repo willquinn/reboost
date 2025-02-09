@@ -5,4 +5,4 @@ concurrency =
 parallel = true
 sigterm = true
 
-source = ./src/reboost
+source = reboost
