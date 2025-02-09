@@ -3,47 +3,203 @@ from __future__ import annotations
 import logging
 
 import awkward as ak
+import numba
 import numpy as np
 from lgdo import VectorOfVectors
 
 log = logging.getLogger(__name__)
 
 
-def cluster_by_sorted_field(
-    cluster_variable: ak.Array | VectorOfVectors, field: ak.Array | VectorOfVectors
+def apply_cluster(
+    cluster_run_lengths: VectorOfVectors | ak.Array, field: ak.Array | VectorOfVectors
 ) -> VectorOfVectors:
-    """Extract the cumulative lengths of the clusters per event.
+    """Apply clustering to a field.
 
-    Example processing block:
+    Parameters
+    ----------
+    cluster_ids
+        run lengths of each cluster
+    field
+        the field to cluster
+    """
+    if isinstance(cluster_run_lengths, VectorOfVectors):
+        cluster_run_lengths = cluster_run_lengths.view_as("ak")
 
-    .. code-block:: yaml
+    if isinstance(field, VectorOfVectors):
+        field = field.view_as("ak")
 
-        trackid_cluster_edep: reboost.shape.cluster.cluster_by_sorted_field(HITS.trackid,HITS.edep)
+    n_cluster = ak.num(cluster_run_lengths, axis=-1)
+    clusters = ak.unflatten(ak.flatten(field), ak.flatten(cluster_run_lengths))
+
+    # reshape into cluster oriented
+    return VectorOfVectors(ak.unflatten(clusters, n_cluster))
+
+
+def cluster_by_step_length(
+    trackid: ak.Array | VectorOfVectors,
+    pos_x: ak.Array | VectorOfVectors,
+    pos_y: ak.Array | VectorOfVectors,
+    pos_z: ak.Array | VectorOfVectors,
+    dist: ak.Array | VectorOfVectors,
+    surf_cut: float = 2,
+    threshold: float = 0.1,
+    threshold_surf: float = 0.0,
+) -> VectorOfVectors:
+    """Perform clustering based on the step length.
+
+    Steps are clustered based on distance, if either:
+     - a step is in a new track,
+     - a step moves from surface to bulk region (or visa versa),
+     - the distance between the first step and the cluster and the current
+     is above a threshold.
+    Then a new cluster is started. The surface region is defined as the volume
+    less than surf_cut distance to the surface. This allows for a fine tuning of the
+    parameters to be different for bulk and surface.
 
     Parameters
     ----------
     trackid
-        the id of the tracks.
-    field
-        another field to cluster.
+        index of the track.
+    pos_x
+        x position of the step.
+    pos_y
+        y position of the step.
+    pos_z
+        z position of the step.
+    dist
+        distance to the detector surface.
+    surf_cut
+        Size of the surface region (in mm)
+    threshold
+        Distance threshold in mm to combine steps in the bulk.
+    threshold_surf
+        Distance threshold in mm to combine steps in the surface.
 
     Returns
     -------
-    A VectorOfVectors with the clustered field, an additional axis is present due to the clustering
+    Array of the run lengths of each cluster within a hit.
     """
-    if isinstance(cluster_variable, VectorOfVectors):
-        cluster_variable = cluster_variable.view_as("ak")
+    # type conversions
+    if isinstance(pos_x, VectorOfVectors):
+        pos_x = pos_x.view_as("ak")
 
-    if isinstance(field, VectorOfVectors):
-        field = cluster_variable.view_as("ak")
+    if isinstance(pos_y, VectorOfVectors):
+        pos_y = pos_y.view_as("ak")
 
-    # run length of each cluster
-    counts = ak.run_lengths(cluster_variable)
+    if isinstance(pos_z, VectorOfVectors):
+        pos_z = pos_z.view_as("ak")
 
-    n_cluster = ak.num(counts, axis=-1)
-    clusters = ak.unflatten(ak.flatten(field), ak.flatten(counts))
+    if isinstance(trackid, VectorOfVectors):
+        trackid = trackid.view_as("ak")
 
-    return VectorOfVectors(ak.unflatten(clusters, n_cluster))
+    if isinstance(dist, VectorOfVectors):
+        dist = dist.view_as("ak")
+
+    pos = np.vstack(
+        [
+            ak.flatten(pos_x).to_numpy(),
+            ak.flatten(pos_y).to_numpy(),
+            ak.flatten(pos_z).to_numpy(),
+        ]
+    ).T
+
+    indices_flat = cluster_by_distance_numba(
+        ak.flatten(ak.local_index(trackid)).to_numpy(),
+        ak.flatten(trackid).to_numpy(),
+        pos,
+        ak.flatten(dist).to_numpy(),
+        surf_cut=surf_cut,
+        threshold=threshold,
+        threshold_surf=threshold_surf,
+    )
+
+    # reshape into being event oriented
+    indices = ak.unflatten(indices_flat, ak.num(ak.local_index(trackid)))
+
+    # number of steps per cluster
+    counts = ak.run_lengths(indices)
+
+    return VectorOfVectors(counts)
+
+
+@numba.njit
+def cluster_by_distance_numba(
+    local_index: np.ndarray,
+    trackid: np.ndarray,
+    pos: np.ndarray,
+    dist_to_surf: np.ndarray,
+    surf_cut: float = 2,
+    threshold: float = 0.1,
+    threshold_surf: float = 0.0,
+) -> np.ndarray:
+    """Cluster steps by the distance between points in the same track.
+
+    This function gives the basic numerical calculations for
+    :func:`cluster_by_step_length`.
+
+    Parameters
+    ----------
+    local_index
+        1D array of the local index within each hit (step group)
+    trackid
+        1D array of index of the track
+    pos
+        `(n,3)` size array of the positions
+    dist_to_surf
+        1D array of the distance to the detector surface.
+    surf_cut
+        Size of the surface region (in mm)
+    threshold
+        Distance threshold in mm to combine steps in the bulk.
+    threshold_surf
+        Distance threshold in mm to combine steps in the surface.
+
+    Returns
+    -------
+    np.ndarray
+        1D array of cluster indices
+    """
+
+    def _dist(a, b):
+        return np.sqrt(np.sum((a - b) ** 2))
+
+    n = len(local_index)
+    out = np.zeros(n, dtype=numba.int32)
+
+    trackid_prev = -1
+    pos_prev = np.zeros(3, dtype=numba.float64)
+    cluster_idx = -1
+    is_surf_prev = False
+
+    for idx in range(n):
+        thr = threshold if dist_to_surf[idx] > surf_cut else threshold_surf
+
+        new_cluster = (
+            (trackid[idx] != trackid_prev)
+            or (is_surf_prev and (dist_to_surf[idx] > surf_cut))
+            or ((not is_surf_prev) and (dist_to_surf[idx] < surf_cut))
+            or (_dist(pos[idx, :], pos_prev) > thr)
+        )
+
+        # New hit, reset cluster index
+        if idx == 0 or local_index[idx] == 0:
+            cluster_idx = 0
+            pos_prev = pos[idx]
+
+        # either new track, moving from surface to bulk,
+        # moving from bulk to surface, or stepping more than
+        # the threshold. Start a new cluster.
+        elif new_cluster:
+            cluster_idx += 1
+            pos_prev = pos[idx, :]
+
+        out[idx] = cluster_idx
+
+        # Update previous values
+        trackid_prev = trackid[idx]
+        is_surf_prev = dist_to_surf[idx] < surf_cut
+
+    return out
 
 
 def step_lengths(
