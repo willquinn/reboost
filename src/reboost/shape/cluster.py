@@ -50,8 +50,8 @@ def cluster_by_step_length(
     Steps are clustered based on distance, if either:
      - a step is in a new track,
      - a step moves from surface to bulk region (or visa versa),
-     - the distance between the first step and the cluster and the current
-     is above a threshold.
+     - the distance between the first step and the cluster and the current is above a threshold.
+
     Then a new cluster is started. The surface region is defined as the volume
     less than surf_cut distance to the surface. This allows for a fine tuning of the
     parameters to be different for bulk and surface.
