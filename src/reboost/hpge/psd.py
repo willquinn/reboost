@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 
 import awkward as ak
+import numba
 import numpy as np
 from lgdo import Array
+
+from reboost.hpge.drift_time import ReadDTFile
 
 log = logging.getLogger(__name__)
 
@@ -72,3 +75,85 @@ def r90(edep: ak.Array, xloc: ak.Array, yloc: ak.Array, zloc: ak.Array) -> Array
     r90 = sorted_dist[r90_indices]
 
     return Array(ak.flatten(r90).to_numpy())
+
+
+def calculate_drift_times(
+    xdata: ak.Array, ydata: ak.Array, zdata: ak.Array, dt_file: ReadDTFile
+) -> ak.Array:
+    x_flat = ak.flatten(xdata).to_numpy() * 1000
+    y_flat = ak.flatten(ydata).to_numpy() * 1000
+    z_flat = ak.flatten(zdata).to_numpy() * 1000
+
+    # Vectorized calculation of drift times for each cluster element
+    drift_times_flat = np.vectorize(lambda x, y, z: dt_file.GetTime(x, y, z))(
+        x_flat, y_flat, z_flat
+    )
+
+    return ak.unflatten(drift_times_flat, ak.num(xdata))
+
+
+def psa(t1: np.float64, e1: np.float64, t2: np.float64, e2: np.float64) -> np.float64:
+    dt = abs(t1 - t2)
+    return dt / e_scaler(e1, e2)
+
+
+def e_scaler(e1: np.float64, e2: np.float64) -> np.float64:
+    if e1 > 0 and e2 > 0:
+        return 1 / np.sqrt(e1 * e2)
+    return 1e9  # Large value to avoid divide-by-zero errors
+
+
+@numba.njit(cache=True)
+def psa_heuristic_numba(
+    drift_times: np.array, energies: np.array, event_offsets: np.array
+) -> np.array:
+    num_events = len(event_offsets) - 1
+    dt_heuristic_output = np.zeros(num_events, dtype=np.float64)
+
+    for evt_idx in range(num_events):
+        start, end = event_offsets[evt_idx], event_offsets[evt_idx + 1]
+        if start == end:
+            continue
+
+        event_energies = energies[start:end]
+        event_drift_times = drift_times[start:end]
+
+        valid_indices = np.where(event_energies > 0)[0]
+        if len(valid_indices) < 2:
+            continue
+
+        filtered_drift_times = event_drift_times[valid_indices]
+        filtered_energies = event_energies[valid_indices]
+        nhits = len(event_drift_times)
+
+        sorted_indices = np.argsort(filtered_drift_times)
+        sorted_drift_times = filtered_drift_times[sorted_indices]
+        sorted_energies = filtered_energies[sorted_indices]
+
+        max_identify = 0
+        for mkr in range(1, nhits):
+            e1 = np.sum(sorted_energies[:mkr])
+            e2 = np.sum(sorted_energies[mkr:])
+
+            t1 = np.sum(sorted_drift_times[:mkr] * sorted_energies[:mkr]) / e1
+            t2 = np.sum(sorted_drift_times[mkr:] * sorted_energies[mkr:]) / e2
+
+            identify = psa(t1, e1, t2, e2)
+            max_identify = max(max_identify, identify)
+
+        dt_heuristic_output[evt_idx] = max_identify
+
+    return dt_heuristic_output
+
+
+def dt_heuristic(data: ak.Array, dt_file: ReadDTFile) -> Array:
+    drift_times = calculate_drift_times(data.xloc, data.yloc, data.zloc, dt_file)
+    drift_times_flat = ak.flatten(drift_times).to_numpy()
+
+    energies_flat = ak.flatten(data.edep).to_numpy()
+
+    event_offsets = np.append(0, np.cumsum(ak.num(drift_times)))
+
+    dt_heuristic_output = psa_heuristic_numba(drift_times_flat, energies_flat, event_offsets)
+
+    return Array(dt_heuristic_output)
