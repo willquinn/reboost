@@ -9,7 +9,9 @@ from reboost.shape.group import group_by_time
 
 def test_dt_heuristic():
     det_pos = [50, 0, -30]
-    dt_file = ReadDTFile("/root/reboost/tests/hpge/test_files/B99000A_drift_time_map.lh5", *det_pos)
+    dt_file = ReadDTFile(
+        "/root/reboost/tests/hpge/test_files/B99000A_drift_time_map.lh5", "drift_times", *det_pos
+    )
     cluster_size_mm = 0.1
 
     data = lh5.read_as("stp/det001/", "test_files/internal_electron.lh5", "ak")

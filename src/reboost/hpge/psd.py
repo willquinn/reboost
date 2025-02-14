@@ -8,7 +8,7 @@ import numpy as np
 from lgdo import Array
 
 from reboost.hpge.drift_time import calculate_drift_times
-from reboost.hpge.utils import ReadDTFile
+from reboost.hpge.utils import ReadHPGeMap
 from reboost.math.functions import piecewise_linear_activeness
 from reboost.shape.cluster import apply_cluster, cluster_by_step_length
 
@@ -90,7 +90,7 @@ def e_scaler(e1: np.float64, e2: np.float64) -> np.float64:
     return 1 / np.sqrt(e1 * e2)
 
 
-def do_cluster(grouped_data: ak.Array, cluster_size_mm: np.float64, dt_file: ReadDTFile):
+def do_cluster(grouped_data: ak.Array, cluster_size_mm: np.float64, drift_time_map: ReadHPGeMap):
     cluster_indices = cluster_by_step_length(
         grouped_data["evtid"],
         grouped_data["xloc"] * 1000,  # Convert to mm
@@ -144,7 +144,7 @@ def do_cluster(grouped_data: ak.Array, cluster_size_mm: np.float64, dt_file: Rea
     )
 
     clusters["drift_time"] = calculate_drift_times(
-        clusters["xloc"], clusters["yloc"], clusters["zloc"], dt_file
+        clusters["xloc"], clusters["yloc"], clusters["zloc"], drift_time_map
     )
 
     return ak.Array(clusters)
@@ -195,7 +195,7 @@ def psa_heuristic_numba(
     return dt_heuristic_output
 
 
-def dt_heuristic(data: ak.Array, dt_file: ReadDTFile) -> Array:
+def dt_heuristic(data: ak.Array, drift_time_map: ReadHPGeMap) -> Array:
     # Test if the data has activeness
     if "activeness" not in data.fields:
         activeness = piecewise_linear_activeness(
@@ -206,7 +206,7 @@ def dt_heuristic(data: ak.Array, dt_file: ReadDTFile) -> Array:
         energies = data["edep"]
     energies_flat = ak.flatten(energies).to_numpy()
 
-    drift_times = calculate_drift_times(data.xloc, data.yloc, data.zloc, dt_file)
+    drift_times = calculate_drift_times(data.xloc, data.yloc, data.zloc, drift_time_map)
     drift_times_flat = ak.flatten(drift_times).to_numpy()
 
     event_offsets = np.append(0, np.cumsum(ak.num(drift_times)))
