@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from math import floor
-from pathlib import Path
 
+import lh5
 import numpy as np
 
 
@@ -14,42 +14,28 @@ class DriftTimes:
 
 
 class ReadDTFile:
-    def __init__(self, filename, x, y, z) -> None:
-        datatype = filename.split("/")[-1].split(".")[-1]
-        self.r = []
-        self.z = []
-        self.t = []
-        self.xpos = x
-        self.ypos = y
-        self.zpos = z
+    def __init__(self, filename, det_pos_x, det_pos_y, det_pos_z) -> None:
+        self.xpos = det_pos_x
+        self.ypos = det_pos_y
+        self.zpos = det_pos_z
 
-        self.drift_times = []
         self.filename = filename
 
-        with Path(filename).open() as file:
-            fl = file.readlines()
+        dt_data = lh5.read_as("/drift_times", filename, "ak")
 
-            for line in fl:
-                line_list = line.split(" ") if datatype == "dat" else line.split(",")
+        self.r = dt_data.r.to_numpy()
+        self.z = dt_data.z.to_numpy()
+        self.t = dt_data.t.to_numpy()
 
-                r = float(line_list[0])
-                z = float(line_list[1])
-                t = float(line_list[2].strip())
+        self.drift_times = [DriftTimes(r, z, t) for r, z, t in zip(self.r, self.z, self.t)]
 
-                self.r.append(r)
-                self.z.append(z)
-                self.t.append(t)
+        self.compute_grid()
 
-                self.drift_times.append(DriftTimes(r, z, t))
-
-        rs, zs = [], []
-        for xi, zi in zip(self.r, self.z):
-            if xi not in rs:
-                rs.append(xi)
-            if zi not in zs:
-                zs.append(zi)
-        self.dz = abs(zs[-1] - zs[-2])
-        self.dr = abs(rs[-1] - rs[-2])
+    def compute_grid(self):
+        """Computes grid parameters for interpolation."""
+        rs, zs = np.unique(self.r), np.unique(self.z)
+        self.dz = abs(zs[1] - zs[0])
+        self.dr = abs(rs[1] - rs[0])
         self.maxz = max(zs)
         self.maxr = max(rs)
         self.minz = min(zs)
