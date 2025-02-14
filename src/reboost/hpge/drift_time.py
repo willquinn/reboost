@@ -26,7 +26,7 @@ class ReadDTFile:
         self.drift_times = []
         self.filename = filename
 
-        with Path.open(filename) as file:
+        with Path(filename).open() as file:
             fl = file.readlines()
 
             for line in fl:

@@ -92,11 +92,13 @@ def calculate_drift_times(
     return ak.unflatten(drift_times_flat, ak.num(xdata))
 
 
+@numba.njit(cache=True)
 def psa(t1: np.float64, e1: np.float64, t2: np.float64, e2: np.float64) -> np.float64:
     dt = abs(t1 - t2)
     return dt / e_scaler(e1, e2)
 
 
+@numba.njit(cache=True)
 def e_scaler(e1: np.float64, e2: np.float64) -> np.float64:
     if e1 > 0 and e2 > 0:
         return 1 / np.sqrt(e1 * e2)
@@ -135,11 +137,13 @@ def psa_heuristic_numba(
             e1 = np.sum(sorted_energies[:mkr])
             e2 = np.sum(sorted_energies[mkr:])
 
-            t1 = np.sum(sorted_drift_times[:mkr] * sorted_energies[:mkr]) / e1
-            t2 = np.sum(sorted_drift_times[mkr:] * sorted_energies[mkr:]) / e2
+            # when mkr == nhits, e1 = sum(sorted_energies) and e2 = 0
+            if e1 > 0 and e2 > 0:
+                t1 = np.sum(sorted_drift_times[:mkr] * sorted_energies[:mkr]) / e1
+                t2 = np.sum(sorted_drift_times[mkr:] * sorted_energies[mkr:]) / e2
 
-            identify = psa(t1, e1, t2, e2)
-            max_identify = max(max_identify, identify)
+                identify = psa(t1, e1, t2, e2)
+                max_identify = max(max_identify, identify)
 
         dt_heuristic_output[evt_idx] = max_identify
 
