@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from math import floor
 
-import lh5
 import numpy as np
+from lgdo import lh5
 
 
 class DriftTimes:
