@@ -7,7 +7,10 @@ import numba
 import numpy as np
 from lgdo import Array
 
-from reboost.hpge.drift_time import ReadDTFile
+from reboost.hpge.drift_time import calculate_drift_times
+from reboost.hpge.utils import ReadDTFile
+from reboost.math.functions import piecewise_linear_activeness
+from reboost.shape.cluster import apply_cluster, cluster_by_step_length
 
 log = logging.getLogger(__name__)
 
@@ -77,32 +80,74 @@ def r90(edep: ak.Array, xloc: ak.Array, yloc: ak.Array, zloc: ak.Array) -> Array
     return Array(ak.flatten(r90).to_numpy())
 
 
-def calculate_drift_times(
-    xdata: ak.Array, ydata: ak.Array, zdata: ak.Array, dt_file: ReadDTFile
-) -> ak.Array:
-    x_flat = ak.flatten(xdata).to_numpy() * 1000
-    y_flat = ak.flatten(ydata).to_numpy() * 1000
-    z_flat = ak.flatten(zdata).to_numpy() * 1000
-
-    # Vectorized calculation of drift times for each cluster element
-    drift_times_flat = np.vectorize(lambda x, y, z: dt_file.GetTime(x, y, z))(
-        x_flat, y_flat, z_flat
-    )
-
-    return ak.unflatten(drift_times_flat, ak.num(xdata))
-
-
 @numba.njit(cache=True)
 def psa(t1: np.float64, e1: np.float64, t2: np.float64, e2: np.float64) -> np.float64:
-    dt = abs(t1 - t2)
-    return dt / e_scaler(e1, e2)
+    return abs(t1 - t2) / e_scaler(e1, e2)
 
 
 @numba.njit(cache=True)
 def e_scaler(e1: np.float64, e2: np.float64) -> np.float64:
-    if e1 > 0 and e2 > 0:
-        return 1 / np.sqrt(e1 * e2)
-    return 1e9  # Large value to avoid divide-by-zero errors
+    return 1 / np.sqrt(e1 * e2)
+
+
+def do_cluster(grouped_data: ak.Array, cluster_size_mm: np.float64, dt_file: ReadDTFile):
+    cluster_indices = cluster_by_step_length(
+        grouped_data["evtid"],
+        grouped_data["xloc"] * 1000,  # Convert to mm
+        grouped_data["yloc"] * 1000,  # Convert to mm
+        grouped_data["zloc"] * 1000,  # Convert to mm
+        grouped_data["dist_to_surf"] * 1000,  # Convert to mm
+        threshold=cluster_size_mm,
+    )
+
+    clustered_data = {
+        f"{field}": apply_cluster(cluster_indices, grouped_data[f"{field}"]).view_as("ak")
+        for field in ["edep", "xloc", "yloc", "zloc", "time", "dist_to_surf"]
+    }
+    clustered_data["activeness"] = piecewise_linear_activeness(
+        clustered_data["dist_to_surf"], 0.5, 0.5
+    ).view_as("ak")
+
+    cluster_energy = ak.sum(clustered_data["edep"] * clustered_data["activeness"], axis=-1)
+    cluster_energy_shaped = ak.broadcast_arrays(clustered_data["edep"], cluster_energy)[1]
+    weights = ak.where(cluster_energy_shaped > 0, clustered_data["edep"] / cluster_energy_shaped, 0)
+
+    clusters = {
+        f"{field}": ak.sum(clustered_data[f"{field}"] * weights, axis=-1)
+        for field in ["xloc", "yloc", "zloc", "time", "dist_to_surf", "activeness"]
+    }
+    clusters["edep"] = cluster_energy
+
+    clusters["cluster_size"] = (
+        ak.sum(
+            weights
+            * (
+                (
+                    clustered_data["xloc"]
+                    - ak.broadcast_arrays(clustered_data["xloc"], clusters["xloc"])[1]
+                )
+                ** 2
+                + (
+                    clustered_data["yloc"]
+                    - ak.broadcast_arrays(clustered_data["yloc"], clusters["yloc"])[1]
+                )
+                ** 2
+                + (
+                    clustered_data["zloc"]
+                    - ak.broadcast_arrays(clustered_data["zloc"], clusters["zloc"])[1]
+                )
+                ** 2
+            ),
+            axis=-1,
+        )
+        ** 0.5
+    )
+
+    clusters["drift_time"] = calculate_drift_times(
+        clusters["xloc"], clusters["yloc"], clusters["zloc"], dt_file
+    )
+
+    return ak.Array(clusters)
 
 
 @numba.njit(cache=True)
@@ -151,10 +196,18 @@ def psa_heuristic_numba(
 
 
 def dt_heuristic(data: ak.Array, dt_file: ReadDTFile) -> Array:
+    # Test if the data has activeness
+    if "activeness" not in data.fields:
+        activeness = piecewise_linear_activeness(
+            data["dist_to_surf"], fccd=0.5 / 1000, tl=0.5 / 1000
+        ).view_as("ak")
+        energies = data["edep"] * activeness
+    else:
+        energies = data["edep"]
+    energies_flat = ak.flatten(energies).to_numpy()
+
     drift_times = calculate_drift_times(data.xloc, data.yloc, data.zloc, dt_file)
     drift_times_flat = ak.flatten(drift_times).to_numpy()
-
-    energies_flat = ak.flatten(data.edep).to_numpy()
 
     event_offsets = np.append(0, np.cumsum(ak.num(drift_times)))
 
