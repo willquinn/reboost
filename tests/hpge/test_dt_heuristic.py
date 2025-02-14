@@ -21,12 +21,12 @@ def do_cluster(grouped_data, cluster_size_mm, dt_file):
         threshold=cluster_size_mm,
     )
     clustered_data = {
-        f"{field}": apply_cluster(cluster_indices, grouped_data[f"{field}"])
+        f"{field}": apply_cluster(cluster_indices, grouped_data[f"{field}"]).view_as("ak")
         for field in ["edep", "xloc", "yloc", "zloc", "time", "dist_to_surf"]
     }
     clustered_data["activeness"] = piecewise_linear_activeness(
         clustered_data["dist_to_surf"], 0.5, 0.5
-    )
+    ).view_as("ak")
 
     cluster_energy = ak.sum(clustered_data["edep"] * clustered_data["activeness"], axis=-1)
     cluster_energy_shaped = ak.broadcast_arrays(clustered_data["edep"], cluster_energy)[1]
@@ -80,7 +80,7 @@ def test_dt_heuristic():
 
     # First calculate the dt heur on the none clustered data
     drift_times = calculate_drift_times(
-        grouped_data["xloc"], grouped_data["yloc"], grouped_data["zloc"], grouped_data
+        grouped_data["xloc"], grouped_data["yloc"], grouped_data["zloc"], dt_file
     )
     drift_times_flat = ak.flatten(drift_times).to_numpy()
     energies_flat = ak.flatten(grouped_data["edep"]).to_numpy()
